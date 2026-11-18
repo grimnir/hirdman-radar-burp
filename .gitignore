@@ -4,3 +4,7 @@ build/
 *.iml
 .idea/
 .DS_Store
+
+# Local notes and tools, never published
+*.local.md
+local/
