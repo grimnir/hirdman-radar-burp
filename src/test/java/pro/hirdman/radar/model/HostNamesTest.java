@@ -1,6 +1,7 @@
 package pro.hirdman.radar.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Optional;
@@ -31,6 +32,19 @@ class HostNamesTest {
         String host = "a".repeat(63) + "." + "b".repeat(63) + "." + "c".repeat(63) + "." + "d".repeat(57) + ".com";
         assertEquals(253, host.length());
         assertEquals(Optional.of(host), HostNames.normalize(host));
+    }
+
+    @Test
+    void internalZonesAndIpsAreNotPublic() {
+        for (String internal : new String[] {"srv01.corp.local", "jira.internal", "nas.home.arpa", "x.lan", "app.corp",
+                "router.home", "db.localhost", "a.test", "b.invalid", "c.example", "hidden.onion", "wiki.intranet",
+                "box.localdomain", "1.0.0.10.in-addr.arpa", "JIRA.Internal.", "10.0.0.1", "::1", "_x.example.com", null}) {
+            assertFalse(HostNames.isPublic(internal), String.valueOf(internal));
+        }
+        for (String pub : new String[] {"a.example.com", "local.example.com", "corp.example.org", "test.example.net",
+                "VPN.Example.com."}) {
+            assertTrue(HostNames.isPublic(pub), pub);
+        }
     }
 
     @Test

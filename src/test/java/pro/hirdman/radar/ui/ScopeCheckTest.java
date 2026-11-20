@@ -25,11 +25,24 @@ class ScopeCheckTest {
                 "new.example.com", NOW.minus(Duration.ofHours(2))));
         assertEquals(List.of("a.example.com", "old.example.com"), c.hosts());
         assertEquals(1, c.recent());
+        assertEquals(0, c.internal());
+    }
+
+    @Test
+    void internalNamesAreCountedAndNotSent() {
+        ScopeCheck c = plan(List.of("a.example.com", "srv01.corp.local", "SRV01.corp.local", "jira.internal", "10.0.0.1"),
+                Map.of());
+        assertEquals(List.of("a.example.com"), c.hosts());
+        assertEquals(2, c.internal());
+        assertEquals("Check 1 in-scope host from the site map for leaks? 2 internal host names (such as .local or .corp)"
+                + " are not sent.", c.question(null));
+        assertEquals("Check 1 in-scope host from the site map for leaks? 1 internal host name (such as .local or .corp)"
+                + " is not sent.", new ScopeCheck(List.of("a.example.com"), 0, 1).question(null));
     }
 
     @Test
     void theQuestionGivesTheCountsAndWhatTheHourAllows() {
-        ScopeCheck two = new ScopeCheck(List.of("a.example.com", "b.example.com"), 1);
+        ScopeCheck two = new ScopeCheck(List.of("a.example.com", "b.example.com"), 1, 0);
         assertEquals("Check 2 in-scope hosts from the site map for leaks? 1 host checked in the last 24 h is skipped.",
                 two.question(null));
         assertEquals("Check 2 in-scope hosts from the site map for leaks? 1 host checked in the last 24 h is skipped. "
@@ -38,15 +51,19 @@ class ScopeCheckTest {
         assertEquals("Check 2 in-scope hosts from the site map for leaks? 1 host checked in the last 24 h is skipped. "
                 + "Your address can check 1 more host this hour; the rest continue when the limit refills.", two.question(1));
         assertEquals("Check 1 in-scope host from the site map for leaks? 3 hosts checked in the last 24 h are skipped.",
-                new ScopeCheck(List.of("a.example.com"), 3).question(null));
-        assertEquals("Check 1 in-scope host from the site map for leaks?", new ScopeCheck(List.of("a.example.com"), 0).question(null));
+                new ScopeCheck(List.of("a.example.com"), 3, 0).question(null));
+        assertEquals("Check 1 in-scope host from the site map for leaks?", new ScopeCheck(List.of("a.example.com"), 0, 0).question(null));
     }
 
     @Test
     void nothingToCheckSaysWhy() {
-        assertTrue(new ScopeCheck(List.of(), 0).isEmpty());
-        assertEquals("No in-scope host names in the site map.", new ScopeCheck(List.of(), 0).nothing());
-        assertEquals("Nothing to check: 1 in-scope host was checked in the last 24 h.", new ScopeCheck(List.of(), 1).nothing());
-        assertEquals("Nothing to check: 4 in-scope hosts were checked in the last 24 h.", new ScopeCheck(List.of(), 4).nothing());
+        assertTrue(new ScopeCheck(List.of(), 0, 0).isEmpty());
+        assertEquals("No in-scope host names in the site map.", new ScopeCheck(List.of(), 0, 0).nothing());
+        assertEquals("Nothing to check: 1 in-scope host was checked in the last 24 h.", new ScopeCheck(List.of(), 1, 0).nothing());
+        assertEquals("Nothing to check: 4 in-scope hosts were checked in the last 24 h.", new ScopeCheck(List.of(), 4, 0).nothing());
+        assertEquals("No public in-scope host names in the site map. 3 internal host names (such as .local or .corp) are not sent.",
+                new ScopeCheck(List.of(), 0, 3).nothing());
+        assertEquals("Nothing to check: 1 in-scope host was checked in the last 24 h. 1 internal host name (such as .local or"
+                + " .corp) is not sent.", new ScopeCheck(List.of(), 1, 1).nothing());
     }
 }

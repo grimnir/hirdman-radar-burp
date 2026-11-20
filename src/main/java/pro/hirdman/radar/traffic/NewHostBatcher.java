@@ -13,7 +13,7 @@ import java.util.function.Supplier;
 import pro.hirdman.radar.model.HostNames;
 
 /**
- * Collects in-scope host names seen in traffic and hands them out as one batch at most every {@code every}.
+ * Collects in-scope public host names seen in traffic and hands them out as one batch at most every {@code every}.
  * A host checked or batched within {@code skipCheckedWithin} is skipped. Thread-safe.
  */
 public final class NewHostBatcher {
@@ -43,7 +43,7 @@ public final class NewHostBatcher {
             return;
         }
         Optional<String> h = HostNames.normalize(host);
-        if (h.isEmpty()) {
+        if (h.isEmpty() || !HostNames.isPublic(h.get())) {
             return;
         }
         synchronized (this) {

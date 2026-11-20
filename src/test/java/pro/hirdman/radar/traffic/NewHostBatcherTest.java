@@ -47,6 +47,15 @@ class NewHostBatcherTest {
     }
 
     @Test
+    void skipsInternalNames() {
+        b.offer("srv01.corp.local", true);
+        b.offer("jira.internal", true);
+        b.offer("nas.home.arpa", true);
+        b.offer("pub.example.com", true);
+        assertEquals(List.of("pub.example.com"), b.drain(T0));
+    }
+
+    @Test
     void skipsTheRadarServer() {
         b.offer("scan.hirdman.pro", true);
         b.offer("SCAN.hirdman.pro.", true);
