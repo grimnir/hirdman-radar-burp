@@ -9,14 +9,21 @@ import java.util.Map;
 public interface Transport {
 
     /** The largest answer read; a larger one is refused before it is turned into text. */
-    int MAX_BODY = 16 * 1024 * 1024;
+    int MAX_BODY = 4 * 1024 * 1024;
 
     /** The answer was larger than {@link #MAX_BODY}. */
     final class TooLarge extends IOException {
-        static final String MESSAGE = "answer larger than 16 MB";
+        static final String MESSAGE = "answer larger than 4 MB";
 
         public TooLarge() {
             super(MESSAGE);
+        }
+    }
+
+    /** Burp changed the request on its way out (session rules, other extensions); its answer is not used. */
+    final class Altered extends IOException {
+        public Altered(String message) {
+            super(message);
         }
     }
 

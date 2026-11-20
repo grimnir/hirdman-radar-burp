@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import pro.hirdman.radar.api.ConnectionSettings;
 import pro.hirdman.radar.api.Radar;
 import pro.hirdman.radar.api.RadarClient;
 import pro.hirdman.radar.burp.BurpIssues;
@@ -38,6 +39,9 @@ public final class HirdmanRadar implements BurpExtension {
 
     /** The name in Burp's extension list and the BApp Store; the tab, menu and settings keep the short one. */
     static final String NAME = "Hirdman Radar: Subdomain Leak Check";
+    /** Unload must not hold Burp up: the job queue takes up to 2 s of this, queued Burp calls the rest. */
+    static final Duration UNLOAD_BUDGET = Duration.ofSeconds(4);
+    static final Duration BURP_THREAD_WAIT = Duration.ofSeconds(2);
 
     @Override
     public void initialize(MontoyaApi api) {
@@ -49,7 +53,7 @@ public final class HirdmanRadar implements BurpExtension {
         ProjectStore project = new ProjectStore(api.persistence().extensionData(), log::logToError);
         ResultStore store = project.load();
 
-        BurpTransport transport = new BurpTransport(api.http(), settings::verifyTls, projectSwitch::off);
+        BurpTransport transport = new BurpTransport(api.http(), settings::verifyTls, projectSwitch::off, log::logToError);
         Supplier<Radar> radar = () -> RadarClient.of(settings.serverUrl(), transport);
         Consumer<String> events = e -> {
             if (JobRunner.isFailure(e)) {
@@ -59,11 +63,12 @@ public final class HirdmanRadar implements BurpExtension {
             }
         };
         MetaGate gate = new MetaGate();
-        JobRunner runner = new JobRunner(radar, store, gate, Sleeper.real(),
-                () -> JobRunner.RunOptions.of(settings.snapshot()), events, log::logToError);
+        // A job's client is made for the server of the settings snapshot the job runs with.
+        JobRunner runner = new JobRunner(server -> new RadarClient(new ConnectionSettings(server), transport), store, gate,
+                Sleeper.real(), () -> JobRunner.RunOptions.of(settings.snapshot()), events, log::logToError);
         // The queue starts working before the tab exists, so its changes reach the tab through this reference.
         AtomicReference<RadarTab> tabRef = new AtomicReference<>();
-        JobQueue queue = new JobQueue(runner, radar, job -> {
+        JobQueue queue = new JobQueue(runner, job -> {
             RadarTab t = tabRef.get();
             if (t != null) {
                 t.jobsChanged();
@@ -116,8 +121,17 @@ public final class HirdmanRadar implements BurpExtension {
         traffic.start();
         project.start();
 
-        api.extension().registerUnloadingHandler(() -> runAll(log::logToError, traffic::close, tab::close, queue::shutdown,
-                burpThread::close, project::close));
+        api.extension().registerUnloadingHandler(() -> {
+            long end = System.nanoTime() + UNLOAD_BUDGET.toNanos();
+            runAll(log::logToError, traffic::close, tab::close, queue::shutdown,
+                    () -> burpThread.close(left(end, BURP_THREAD_WAIT)), project::close);
+        });
+    }
+
+    /** What is left of the unload budget ending at {@code end}, at most {@code max}. */
+    static Duration left(long end, Duration max) {
+        long left = Math.max(0, end - System.nanoTime());
+        return left < max.toNanos() ? Duration.ofNanos(left) : max;
     }
 
     /** Unload: a failing step must not skip the final save. */

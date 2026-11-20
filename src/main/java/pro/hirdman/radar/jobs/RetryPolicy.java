@@ -21,6 +21,11 @@ public final class RetryPolicy {
 
     static final Duration MAX_BACKOFF_RETRY_AFTER = Duration.ofSeconds(120);
     static final Duration RATE_LIMIT_BUDGET = Duration.ofMinutes(70);
+    /** The server cancels a job nobody polls for 60 s, so a poll never waits longer than this. */
+    static final Duration MAX_POLL_WAIT = Duration.ofSeconds(45);
+    /** Tries of a poll whose answer could not be read; polling again with the same cursor loses nothing. */
+    static final int MALFORMED_POLL_ATTEMPTS = 3;
+    static final String MALFORMED = "Unexpected answer from the server";
 
     private static final int[] BACKOFF_SECONDS = {2, 4, 8, 16, 30};
 
@@ -29,33 +34,39 @@ public final class RetryPolicy {
 
     /**
      * {@code attemptsUsed} counts the failed tries before this one; the try that just failed is number
-     * {@code attemptsUsed + 1}, and {@code maxAttempts} tries are made at most.
+     * {@code attemptsUsed + 1}, and {@code maxAttempts} tries are made at most. {@code poll}: the call reads a live
+     * server job, so its waits are capped and an unreadable answer is tried again.
      */
     public static Decision decide(ApiException e, int attemptsUsed, int maxAttempts, Duration waitedOn429,
-            String serverHost, DoubleSupplier random) {
+            String serverHost, DoubleSupplier random, boolean poll) {
+        if (e.blocked()) {
+            return new Fail(e.getMessage());
+        }
         if (e.kind() == ApiException.Kind.MALFORMED) {
-            return new Fail("Unexpected answer from the server");
+            return poll
+                    ? backoff(e, attemptsUsed, Math.min(maxAttempts, MALFORMED_POLL_ATTEMPTS), random, MALFORMED, MALFORMED, poll)
+                    : new Fail(MALFORMED);
         }
         if (e.kind() == ApiException.Kind.UNREACHABLE) {
             return backoff(e, attemptsUsed, maxAttempts, random, "Server unreachable",
-                    StatusText.cannotReach(serverHost));
+                    StatusText.cannotReach(serverHost), poll);
         }
         int status = e.status();
         if (status == 429) {
-            return rateLimit(e, waitedOn429);
+            return rateLimit(e, waitedOn429, poll);
         }
         if (status == 401) {
             return new Fail("The radar server does not accept requests without a key right now.");
         }
         if (status == 500 || status == 502 || status == 503 || status == 504 || status >= 520 && status <= 524) {
             String reason = "Server unavailable (HTTP " + status + ")";
-            return backoff(e, attemptsUsed, maxAttempts, random, reason, reason);
+            return backoff(e, attemptsUsed, maxAttempts, random, reason, reason, poll);
         }
         return new Fail(e.serverMessage() != null && !e.serverMessage().isEmpty() ? e.serverMessage() : "HTTP " + status);
     }
 
     private static Decision backoff(ApiException e, int attemptsUsed, int maxAttempts, DoubleSupplier random,
-            String reason, String finalReason) {
+            String reason, String finalReason, boolean poll) {
         if (attemptsUsed + 1 >= maxAttempts) {
             return new Fail(finalReason);
         }
@@ -65,10 +76,14 @@ public final class RetryPolicy {
                     int base = BACKOFF_SECONDS[Math.min(Math.max(attemptsUsed, 0), BACKOFF_SECONDS.length - 1)];
                     return Duration.ofMillis(Math.round(base * 1000 * (0.8 + 0.4 * random.getAsDouble())));
                 });
-        return new Retry(after, true, Wait.BACKOFF, reason);
+        return new Retry(capped(after, poll), true, Wait.BACKOFF, reason);
     }
 
-    private static Decision rateLimit(ApiException e, Duration waitedOn429) {
+    private static Duration capped(Duration after, boolean poll) {
+        return poll && after.compareTo(MAX_POLL_WAIT) > 0 ? MAX_POLL_WAIT : after;
+    }
+
+    private static Decision rateLimit(ApiException e, Duration waitedOn429, boolean poll) {
         String msg = e.serverMessage() == null ? "" : e.serverMessage();
         Wait kind;
         String reason;
@@ -86,7 +101,7 @@ public final class RetryPolicy {
             reason = "Rate limited by the server";
             fallback = Duration.ofSeconds(60);
         }
-        Duration after = e.retryAfter().map(RetryPolicy::atLeastASecond).orElse(fallback);
+        Duration after = capped(e.retryAfter().map(RetryPolicy::atLeastASecond).orElse(fallback), poll);
         if (waitedOn429.plus(after).compareTo(RATE_LIMIT_BUDGET) > 0) {
             return new Fail("Rate limited by the server for over 70 minutes");
         }

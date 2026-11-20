@@ -3,6 +3,7 @@ package pro.hirdman.radar.burp;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static pro.hirdman.radar.burp.Fakes.fake;
 
 import burp.api.montoya.core.ByteArray;
@@ -37,6 +38,7 @@ class BurpTransportTest {
     final AtomicReference<HttpRequest> request = new AtomicReference<>();
     final AtomicReference<Object> answer = new AtomicReference<>();
     final AtomicReference<Duration> timeout = new AtomicReference<>();
+    final List<String> warnings = new ArrayList<>();
 
     final Http http = fake(Http.class, (m, a) -> {
         calls.add("send " + (a[0] == request.get()) + " " + (a.length > 1 && a[1] == options));
@@ -58,7 +60,7 @@ class BurpTransportTest {
     }, d -> {
         timeout.set(d);
         return options;
-    }, () -> verify, () -> off);
+    }, () -> verify, () -> off, warnings::add);
 
     @Test
     void nothingIsSentWhileTheProjectIsOff() {
@@ -74,10 +76,16 @@ class BurpTransportTest {
     }
 
     static HttpRequestResponse response(int status, List<HttpHeader> headers, String body) {
+        return response(status, headers, body, List.of(header("Host", "scan.hirdman.pro")));
+    }
+
+    /** {@code sentHeaders}: the request as Burp sent it, after its session rules and other extensions. */
+    static HttpRequestResponse response(int status, List<HttpHeader> headers, String body, List<HttpHeader> sentHeaders) {
         HttpResponse r = fake(HttpResponse.class, Map.of("statusCode", (short) status, "headers", headers, "bodyToString", body,
                 "toByteArray", fake(ByteArray.class, Map.of("length", body.length())), "bodyOffset", 0));
         Map<String, Object> rr = new LinkedHashMap<>();
         rr.put("response", r);
+        rr.put("request", fake(HttpRequest.class, Map.of("headers", sentHeaders)));
         return fake(HttpRequestResponse.class, rr);
     }
 
@@ -147,7 +155,61 @@ class BurpTransportTest {
                 "toByteArray", fake(ByteArray.class, Map.of("length", Transport.MAX_BODY + 101)), "bodyOffset", 100));
         Map<String, Object> rr = new LinkedHashMap<>();
         rr.put("response", r);
+        rr.put("request", null);
         answer.set(fake(HttpRequestResponse.class, rr));
         assertThrows(Transport.TooLarge.class, () -> transport.send("GET", JOBS, Map.of(), null, Duration.ofSeconds(5)));
+    }
+
+    static final List<HttpHeader> SENT_AS_ASKED = List.of(header("Host", "scan.hirdman.pro"),
+            header("User-Agent", "HirdmanRadar/0.1.0"), header("Accept", "application/json"),
+            header("Content-Type", "application/json"), header("Content-Length", "22"), header("Connection", "close"));
+
+    static Map<String, String> ownHeaders() {
+        Map<String, String> h = new LinkedHashMap<>();
+        h.put("User-Agent", "HirdmanRadar/0.1.0");
+        h.put("Accept", "application/json");
+        h.put("Content-Type", "application/json");
+        return h;
+    }
+
+    @Test
+    void aRequestSentAsAskedPasses() throws IOException {
+        answer.set(response(202, List.of(), "{\"job_id\":\"j1\"}", SENT_AS_ASKED));
+        assertEquals(202, transport.send("POST", JOBS, ownHeaders(), "{\"domain\":\"example.com\"}", Duration.ofSeconds(30))
+                .status());
+        assertEquals(List.of(), warnings);
+    }
+
+    @Test
+    void headersBurpAddedStopTheRequestAndAreLoggedOnce() {
+        // A session handling rule for every URL would send the client's token to the radar server.
+        List<HttpHeader> sent = new ArrayList<>(SENT_AS_ASKED);
+        sent.add(header("cookie", "session=abc"));
+        sent.add(header("X-Forwarded-For", "10.0.0.1"));
+        sent.add(header("Authorization", "Bearer t"));
+        answer.set(response(200, List.of(), "{}", sent));
+        String expected = "Burp added headers to the radar request (cookie, X-Forwarded-For, Authorization)."
+                + " Exclude the radar server from session handling rules.";
+        Transport.Altered e = assertThrows(Transport.Altered.class,
+                () -> transport.send("GET", JOBS, ownHeaders(), null, Duration.ofSeconds(5)));
+        assertEquals(expected, e.getMessage());
+        assertThrows(Transport.Altered.class, () -> transport.send("GET", JOBS, ownHeaders(), null, Duration.ofSeconds(5)));
+        assertEquals(List.of("Hirdman Radar: " + expected), warnings);
+    }
+
+    @Test
+    void anApiKeyOrEncodingTheRadarDidNotSetIsAnAddedHeader() {
+        answer.set(response(200, List.of(), "{}", List.of(header("Host", "scan.hirdman.pro"), header("X-API-Key", "k"),
+                header("Accept-Encoding", "gzip"))));
+        Transport.Altered e = assertThrows(Transport.Altered.class,
+                () -> transport.send("GET", JOBS, Map.of(), null, Duration.ofSeconds(5)));
+        assertTrue(e.getMessage().startsWith("Burp added headers to the radar request (X-API-Key, Accept-Encoding)."),
+                e.getMessage());
+    }
+
+    @Test
+    void http2PseudoHeadersAreNotAdded() throws IOException {
+        answer.set(response(200, List.of(), "{}", List.of(header(":authority", "scan.hirdman.pro"), header(":method", "GET"))));
+        assertEquals(200, transport.send("GET", JOBS, Map.of(), null, Duration.ofSeconds(5)).status());
     }
 }

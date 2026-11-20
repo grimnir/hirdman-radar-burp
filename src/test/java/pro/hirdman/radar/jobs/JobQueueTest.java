@@ -13,16 +13,21 @@ import static pro.hirdman.radar.jobs.FakeRadar.rootCheck;
 
 import java.net.URI;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import pro.hirdman.radar.Threads;
+import pro.hirdman.radar.api.Radar;
+import pro.hirdman.radar.api.ServerEvent.Check;
 import pro.hirdman.radar.model.ResultStore;
 
 @Timeout(20)
@@ -34,16 +39,47 @@ class JobQueueTest {
     final AtomicInteger changes = new AtomicInteger();
     final List<String> events = new CopyOnWriteArrayList<>();
     final JobRunner.RunOptions options = new JobRunner.RunOptions(URI.create("https://scan.hirdman.pro"), null, false, 5, true);
+    /** Delayed tasks of the manual timer; they run only when a test runs them. */
+    final List<Runnable> timed = new CopyOnWriteArrayList<>();
+    final AtomicBoolean timerClosed = new AtomicBoolean();
     JobQueue queue;
 
+    JobRunner runner(Sleeper sleeper, Radar r) {
+        return new JobRunner(server -> r, store, new MetaGate(), sleeper, () -> options, events::add, e -> { }, () -> 0.5,
+                System::nanoTime, Executors.newCachedThreadPool(Threads.daemon("test-http")));
+    }
+
+    /** Delays are recorded and skipped: a delayed task runs at once. */
     JobQueue queue(Sleeper sleeper) {
-        JobRunner runner = new JobRunner(() -> radar, store, new MetaGate(), sleeper, () -> options, events::add, e -> { }, () -> 0.5);
-        queue = new JobQueue(runner, () -> radar, j -> changes.incrementAndGet());
+        queue = new JobQueue(runner(sleeper, radar), j -> changes.incrementAndGet(), (task, d) -> {
+            pauses.add(d);
+            task.run();
+        }, () -> timerClosed.set(true));
         return queue;
     }
 
     JobQueue fakeTimeQueue() {
         return queue((d, job) -> pauses.add(d));
+    }
+
+    /** Delays are recorded and their tasks kept in {@link #timed}. */
+    JobQueue manualTimerQueue() {
+        queue = new JobQueue(runner((d, job) -> pauses.add(d), radar), j -> changes.incrementAndGet(), (task, d) -> {
+            pauses.add(d);
+            timed.add(task);
+        }, () -> timerClosed.set(true));
+        return queue;
+    }
+
+    /**
+     * One explicit step of the worker: a job that sends nothing goes through the queue and is taken off the list.
+     * The worker runs jobs in order, so everything queued before it has been dealt with.
+     */
+    void drain(JobQueue q) throws InterruptedException {
+        store.apply(null, new Check(false, "marker.example.com", 0, 0, 0, 0, 0, true, List.of()), Instant.now());
+        Job marker = q.submit(JobKind.CHECK_HOSTS, null, List.of("marker.example.com"), false);
+        waitUntil(() -> marker.state() == JobState.DONE);
+        q.remove(marker);
     }
 
     @AfterEach
@@ -154,6 +190,7 @@ class JobQueueTest {
 
     @Test
     void retryNowSkipsTheWait() throws Exception {
+        // A real pause of 30 s that Retry now must end.
         radar.starts.add(http(503, "", "Retry-After", "30"));
         radar.polls.add(page(1, true, rootCheck("a.com"), done(0, 0)));
         JobQueue q = queue(Sleeper.real());
@@ -167,7 +204,7 @@ class JobQueueTest {
     }
 
     @Test
-    void cancelDeletesServerJobAndStartsNext() throws Exception {
+    void cancelDeletesServerJobAndStartsNextWithoutWaitingForTheAnswer() throws Exception {
         CountDownLatch release = new CountDownLatch(1);
         radar.polls.add(new FakeRadar.Hang(release, page(1, false, check("x.a.com", true))));
         radar.polls.add(page(1, true, rootCheck("b.com"), done(0, 0)));
@@ -179,11 +216,30 @@ class JobQueueTest {
         assertEquals(JobState.CANCELLED, first.state());
         assertEquals("Cancelled", first.status());
         waitUntil(() -> radar.deleted.contains("j1"));
-        assertEquals(JobState.WAITING, second.state());
-        release.countDown();
+        // The first poll still hangs: the queue does not wait for its answer.
         waitUntil(() -> second.state() == JobState.DONE);
+        assertEquals(1, release.getCount());
+        release.countDown();
         assertEquals(JobState.CANCELLED, first.state());
         assertTrue(store.host("x.a.com").isEmpty(), "a cancelled job writes no rows");
+    }
+
+    @Test
+    void cancelDeletesOnTheServerTheJobWasCreatedOn() throws Exception {
+        FakeRadar other = new FakeRadar();
+        AtomicReference<Radar> current = new AtomicReference<>(radar);
+        CountDownLatch release = new CountDownLatch(1);
+        radar.polls.add(new FakeRadar.Hang(release, page(1, false, check("x.a.com", true))));
+        queue = new JobQueue(new JobRunner(server -> current.get(), store, new MetaGate(), (d, j) -> { }, () -> options,
+                events::add, e -> { }), j -> { });
+        Job first = queue.submit(JobKind.FIND_AND_CHECK, "a.com", List.of(), false);
+        waitUntil(() -> radar.calls.contains("poll j1 0"));
+        // The Server URL changes while the job runs.
+        current.set(other);
+        queue.cancel(first);
+        waitUntil(() -> radar.deleted.contains("j1"));
+        assertEquals(List.of(), other.deleted);
+        release.countDown();
     }
 
     @Test
@@ -197,7 +253,7 @@ class JobQueueTest {
         q.cancel(second);
         release.countDown();
         waitUntil(() -> first.state() == JobState.DONE);
-        Thread.sleep(100);
+        drain(q);
         assertEquals(1, radar.started.size());
         assertEquals(JobState.CANCELLED, second.state());
         assertTrue(radar.deleted.isEmpty());
@@ -218,7 +274,7 @@ class JobQueueTest {
         q.retry(j);
         release.countDown();
         waitUntil(() -> j.state() == JobState.DONE);
-        Thread.sleep(100);
+        drain(q);
         assertEquals(2, radar.started.size(), "retry of a running job does nothing");
         q.remove(j);
         assertEquals(List.of(), q.jobs());
@@ -239,10 +295,10 @@ class JobQueueTest {
         assertEquals(JobState.CANCELLED, j.state());
         waitUntil(() -> radar.calls.contains("interrupted"));
         release.countDown();
-        Thread.sleep(300);
+        assertTrue(q.awaitWorker(Duration.ofSeconds(5)));
         assertTrue(store.all().isEmpty());
+        assertTrue(timerClosed.get());
         Job late = q.submit(JobKind.FIND_AND_CHECK, "b.com", List.of(), false);
-        Thread.sleep(100);
         assertEquals(JobState.WAITING, late.state());
         assertEquals(1, radar.started.size());
         assertEquals(before, changes.get());
@@ -255,11 +311,11 @@ class JobQueueTest {
         Job j = q.submit(JobKind.FIND_AND_CHECK, "a.com", List.of(), false);
         waitUntil(() -> j.state() == JobState.FAILED);
         q.shutdown();
+        assertTrue(q.awaitWorker(Duration.ofSeconds(5)));
         int before = changes.get();
         int logged = events.size();
         q.retry(j);
         q.submit(JobKind.FIND_AND_CHECK, "b.com", List.of(), false);
-        Thread.sleep(100);
         assertEquals(before, changes.get());
         assertEquals(logged, events.size());
         assertEquals(1, radar.started.size());
@@ -270,34 +326,75 @@ class JobQueueTest {
         CountDownLatch release = new CountDownLatch(1);
         radar.polls.add(new FakeRadar.Hang(release, page(1, false, rootCheck("a.com"))));
         radar.polls.add(page(2, true, done(0, 0)));
-        JobQueue q = queue(Sleeper.real());
+        List<Boolean> cutShort = new CopyOnWriteArrayList<>();
+        JobQueue q = queue((d, job) -> {
+            pauses.add(d);
+            cutShort.add(job.wakePending());
+        });
         Job j = q.submit(JobKind.FIND_AND_CHECK, "a.com", List.of(), false);
         waitUntil(() -> radar.calls.contains("poll j1 0"));
         q.retryNow(j);
-        long t = System.nanoTime();
         release.countDown();
         waitUntil(() -> j.state() == JobState.DONE);
-        assertTrue(System.nanoTime() - t >= Duration.ofMillis(1900).toNanos(), "the 2 s pause between pages still runs");
+        assertEquals(List.of(JobRunner.POLL_PAUSE), pauses);
+        assertEquals(List.of(false), cutShort, "the pause between pages is not cut short");
+    }
+
+    /** Runs a domain job with one unchecked host; returns the re-check waiting for its delay. */
+    Job pendingRecheck(JobQueue q) throws InterruptedException {
+        radar.polls.add(page(2, true, rootCheck("a.com"), check("x.a.com", false), done(1, 1)));
+        Job j = q.submit(JobKind.FIND_AND_CHECK, "a.com", List.of(), false);
+        waitUntil(() -> j.state() == JobState.DONE && q.jobs().size() == 2);
+        return q.jobs().get(1);
+    }
+
+    @Test
+    void aPendingRecheckWaitsInTheListAndCanBeCancelled() throws Exception {
+        JobQueue q = manualTimerQueue();
+        Job recheck = pendingRecheck(q);
+        assertEquals(JobState.WAITING, recheck.state());
+        assertEquals("Retry in 2 min", recheck.status());
+        assertEquals(List.of(JobRunner.RECHECK_DELAY), pauses.stream().filter(JobRunner.RECHECK_DELAY::equals).toList());
+        drain(q);
+        assertEquals(JobState.WAITING, recheck.state(), "a held re-check is not taken before its time");
+        q.cancel(recheck);
+        timed.forEach(Runnable::run);
+        drain(q);
+        assertEquals(JobState.CANCELLED, recheck.state());
+        assertEquals(1, radar.started.size());
+    }
+
+    @Test
+    void aRecheckRunsWhenItsTimeComes() throws Exception {
+        JobQueue q = manualTimerQueue();
+        Job recheck = pendingRecheck(q);
+        radar.polls.add(page(1, true, check("x.a.com", true), done(1, 0)));
+        timed.forEach(Runnable::run);
+        waitUntil(() -> recheck.state() == JobState.DONE);
+        assertEquals(2, radar.started.size());
+    }
+
+    @Test
+    void aHeldRecheckDoesNotHoldBackTheSameCheckAskedNow() throws Exception {
+        JobQueue q = manualTimerQueue();
+        Job recheck = pendingRecheck(q);
+        Job now = q.submit(JobKind.CHECK_HOSTS, null, List.of("x.a.com"), false);
+        assertNotSame(recheck, now);
+        radar.polls.add(page(1, true, check("x.a.com", true), done(1, 0)));
+        waitUntil(() -> now.state() == JobState.DONE);
+        assertEquals(JobState.WAITING, recheck.state());
     }
 
     @Test
     void shutdownDropsAPendingRecheck() throws Exception {
-        CountDownLatch inPause = new CountDownLatch(1);
-        CountDownLatch wake = new CountDownLatch(1);
-        radar.polls.add(page(2, true, rootCheck("a.com"), check("x.a.com", false), done(1, 1)));
-        JobQueue q = queue((d, job) -> {
-            pauses.add(d);
-            if (d.equals(JobRunner.RECHECK_DELAY)) {
-                inPause.countDown();
-                wake.await();
-            }
-        });
-        Job j = q.submit(JobKind.FIND_AND_CHECK, "a.com", List.of(), false);
-        assertTrue(inPause.await(5, TimeUnit.SECONDS));
+        JobQueue q = manualTimerQueue();
+        Job recheck = pendingRecheck(q);
         q.shutdown();
-        wake.countDown();
-        Thread.sleep(100);
-        assertEquals(List.of(j), q.jobs());
+        assertTrue(timerClosed.get());
+        assertEquals(JobState.CANCELLED, recheck.state());
+        timed.forEach(Runnable::run);
+        assertTrue(q.awaitWorker(Duration.ofSeconds(5)));
+        assertEquals(1, radar.started.size());
     }
 
     @Test
@@ -313,42 +410,51 @@ class JobQueueTest {
         assertTrue(pauses.contains(Duration.ofMinutes(2)), pauses.toString());
         assertEquals(List.of("Hirdman Radar: queued leak check for a.com", "Hirdman Radar: queued re-check of 1 host"),
                 events.stream().filter(e -> e.contains("queued")).toList());
-        Thread.sleep(200);
+        drain(q);
         assertEquals(2, q.jobs().size());
         assertEquals(JobState.DONE, j.state());
     }
 
     @Test
-    void shutdownEndsTheRecheckWait() throws Exception {
-        radar.polls.add(page(2, true, rootCheck("a.com"), check("x.a.com", false), done(1, 1)));
-        JobQueue q = queue(Sleeper.real());
-        q.submit(JobKind.FIND_AND_CHECK, "a.com", List.of(), false);
-        waitUntil(() -> recheckThreads() == 1);
-        q.shutdown();
-        waitUntil(() -> recheckThreads() == 0);
-    }
-
-    static long recheckThreads() {
-        return Thread.getAllStackTraces().keySet().stream()
-                .filter(t -> t.isAlive() && t.getName().equals("hirdman-radar-recheck")).count();
-    }
-
-    @Test
     void noRecheckIsScheduledAfterShutdown() throws Exception {
         radar.polls.add(page(2, true, rootCheck("a.com"), check("x.a.com", false), done(1, 1)));
-        JobRunner runner = new JobRunner(() -> radar, store, new MetaGate(), Sleeper.real(), () -> options, e -> { }, e -> { }, () -> 0.5);
         AtomicReference<JobQueue> self = new AtomicReference<>();
         // Unload lands right as the job finishes, before the worker schedules its recheck.
-        queue = new JobQueue(runner, () -> radar, j -> {
+        queue = new JobQueue(runner((d, j) -> { }, radar), j -> {
             if (j.state() == JobState.DONE) {
                 self.get().shutdown();
             }
-        });
+        }, (task, d) -> {
+            timed.add(task);
+        }, () -> { });
         self.set(queue);
         Job j = queue.submit(JobKind.FIND_AND_CHECK, "a.com", List.of(), false);
         waitUntil(() -> j.state() == JobState.DONE);
-        Thread.sleep(200);
-        assertEquals(0, recheckThreads());
+        assertTrue(queue.awaitWorker(Duration.ofSeconds(5)));
+        assertEquals(List.of(), timed);
+        assertEquals(List.of(j), queue.jobs());
+    }
+
+    @Test
+    void anErrorInARunFailsTheJobAndTheWorkerGoesOn() throws Exception {
+        // An Error used to end the only worker silently, leaving every job waiting.
+        List<String> errors = new CopyOnWriteArrayList<>();
+        AtomicBoolean crash = new AtomicBoolean(true);
+        JobRunner runner = new JobRunner(server -> {
+            if (crash.getAndSet(false)) {
+                throw new StackOverflowError("deep");
+            }
+            return radar;
+        }, store, new MetaGate(), (d, j) -> { }, () -> options, events::add, errors::add);
+        queue = new JobQueue(runner, j -> { });
+        radar.polls.add(page(1, true, rootCheck("b.com"), done(0, 0)));
+        Job first = queue.submit(JobKind.FIND_AND_CHECK, "a.com", List.of(), false);
+        Job second = queue.submit(JobKind.FIND_AND_CHECK, "b.com", List.of(), false);
+        waitUntil(() -> second.state() == JobState.DONE);
+        assertEquals(JobState.FAILED, first.state());
+        assertEquals("Failed: Unexpected error. Details are in the extension's Errors tab.", first.status());
+        assertTrue(errors.stream().anyMatch(e -> e.startsWith("Hirdman Radar: unexpected error in a.com: java.lang.StackOverflowError: deep")),
+                errors.toString());
     }
 
     @Test

@@ -258,4 +258,69 @@ class RadarClientTest {
         ApiException e = fails(() -> c.meta());
         assertEquals(ApiException.Kind.MALFORMED, e.kind());
     }
+
+    @Test
+    void theAnswerCapIsFourMegabytes() {
+        assertEquals(4 * 1024 * 1024, Transport.MAX_BODY);
+        assertEquals("answer larger than 4 MB", new Transport.TooLarge().getMessage());
+    }
+
+    @Test
+    void lenientJsonIsMalformed() {
+        // Unquoted names, NaN, single quotes, comments and trailing data are not JSON.
+        for (String body : new String[] {
+                "{api_version:1,\"limits\":{\"max_hosts\":50,\"hosts_per_sec\":1.5}}",
+                "{\"api_version\":1,\"limits\":{\"max_hosts\":50,\"hosts_per_sec\":NaN}}",
+                "{'api_version':1,\"limits\":{\"max_hosts\":50,\"hosts_per_sec\":1.5}}",
+                "{\"api_version\":1,/* c */\"limits\":{\"max_hosts\":50,\"hosts_per_sec\":1.5}}",
+                "{\"api_version\":1,\"limits\":{\"max_hosts\":50,\"hosts_per_sec\":1.5}} {}"}) {
+            server.reply(200, body);
+            assertEquals(ApiException.Kind.MALFORMED, fails(() -> client.meta()).kind(), body);
+        }
+        server.reply(202, "{job_id:j1}");
+        assertEquals(ApiException.Kind.MALFORMED, fails(() -> client.startJob(JobRequest.ofDomain("a.com", false))).kind());
+    }
+
+    static String meta(String maxHosts, String hostsPerSec) {
+        return "{\"api_version\":1,\"limits\":{\"max_hosts\":" + maxHosts + ",\"hosts_per_sec\":" + hostsPerSec
+                + ",\"hosts_per_hour\":300}}";
+    }
+
+    @Test
+    void metaLimitsOutOfRangeAreMalformed() throws Exception {
+        for (String[] bad : new String[][] {{"401", "1.5"}, {"-1", "1.5"}, {"50", "0"}, {"50", "-2"}, {"50", "1e400"}}) {
+            server.reply(200, meta(bad[0], bad[1]));
+            assertEquals(ApiException.Kind.MALFORMED, fails(() -> client.meta()).kind(), String.join(" ", bad));
+        }
+        server.reply(200, meta("400", "3")).reply(200, meta("1", "0.5"));
+        assertEquals(400, client.meta().limits().maxHosts());
+        assertEquals(1, client.meta().limits().maxHosts());
+    }
+
+    @Test
+    void moreThanFiveThousandSubdomainsAreMalformed() throws Exception {
+        server.reply(200, subdomains(RadarClient.MAX_SUBDOMAINS + 1)).reply(200, subdomains(RadarClient.MAX_SUBDOMAINS));
+        assertEquals(ApiException.Kind.MALFORMED, fails(() -> client.subdomains("example.com", false)).kind());
+        assertEquals(RadarClient.MAX_SUBDOMAINS, client.subdomains("example.com", false).subdomains().size());
+    }
+
+    static String subdomains(int n) {
+        StringBuilder b = new StringBuilder("{\"domain\":\"example.com\",\"subdomains\":[");
+        for (int i = 0; i < n; i++) {
+            b.append(i == 0 ? "" : ",").append("{\"host\":\"h").append(i).append(".example.com\",\"priority\":1}");
+        }
+        return b.append("]}").toString();
+    }
+
+    @Test
+    void aRequestBurpAlteredIsBlocked() {
+        String why = "Burp added headers to the radar request (Cookie). Exclude the radar server from session handling rules.";
+        RadarClient c = new RadarClient(ConnectionSettings.of("https://scan.hirdman.pro"), (m, u, h, b, t) -> {
+            throw new Transport.Altered(why);
+        });
+        ApiException e = fails(() -> c.meta());
+        assertTrue(e.blocked());
+        assertEquals(why, e.getMessage());
+        assertFalse(fails(() -> client.poll("bad id", 0)).blocked());
+    }
 }
