@@ -61,6 +61,22 @@ class RadarClientTest {
     }
 
     @Test
+    void metaReadsTheOptionalReleaseFields() throws Exception {
+        server.reply(200, "{\"api_version\":1,\"limits\":{\"max_hosts\":50,\"hosts_per_sec\":1.5,\"hosts_per_hour\":300},"
+                + "\"latest_plugin_version\":\"0.2.0\",\"release_url\":\"https://example.org/r\","
+                + "\"notes\":{\"counts_only\":\"c\",\"announcement\":\"Maintenance at 10:00 UTC\"}}");
+        Meta m = client.meta();
+        assertEquals("0.2.0", m.latestPluginVersion());
+        assertEquals("https://example.org/r", m.releaseUrl());
+        assertEquals("Maintenance at 10:00 UTC", m.notes().announcement());
+        server.reply(200, ResponsesTest.META);
+        Meta old = client.meta();
+        assertEquals(null, old.latestPluginVersion());
+        assertEquals(null, old.releaseUrl());
+        assertEquals(null, old.notes().announcement());
+    }
+
+    @Test
     void metaWithoutLimitsIsMalformed() {
         server.reply(200, "{\"api_version\":1}");
         assertEquals(ApiException.Kind.MALFORMED, fails(() -> client.meta()).kind());

@@ -185,15 +185,16 @@ public final class RadarTab extends JPanel {
      */
     public RadarTab(MontoyaApi api, ResultStore store, JobQueue queue, MetaGate gate, Supplier<Options> options,
             ProjectSwitch projectSwitch, Supplier<Radar> radar, ToIntFunction<List<HostResult>> report,
-            Function<List<String>, String> addToSiteMap, Supplier<List<String>> scopeHosts, Supplier<Component> dialogParent) {
-        this(api, store, queue, gate, options, projectSwitch, radar, report, addToSiteMap, scopeHosts, dialogParent,
+            Function<List<String>, String> addToSiteMap, Supplier<List<String>> scopeHosts, BooleanSupplier verifyTls,
+            Supplier<Component> dialogParent) {
+        this(api, store, queue, gate, options, projectSwitch, radar, report, addToSiteMap, scopeHosts, verifyTls, dialogParent,
                 RadarTab::inBackground);
     }
 
     RadarTab(MontoyaApi api, ResultStore store, JobQueue queue, MetaGate gate, Supplier<Options> options,
             ProjectSwitch projectSwitch, Supplier<Radar> radar, ToIntFunction<List<HostResult>> report,
-            Function<List<String>, String> addToSiteMap, Supplier<List<String>> scopeHosts, Supplier<Component> dialogParent,
-            Executor background) {
+            Function<List<String>, String> addToSiteMap, Supplier<List<String>> scopeHosts, BooleanSupplier verifyTls,
+            Supplier<Component> dialogParent, Executor background) {
         super(new BorderLayout(0, 6));
         this.api = api;
         this.dialogParent = dialogParent;
@@ -218,7 +219,8 @@ public final class RadarTab extends JPanel {
         // The parts call the tab's dialogs and clipboard through these lambdas, so tests can replace them later.
         Consumer<String> tell = m -> message.accept(m);
         SendConfirm ask = q -> confirm.ask(q);
-        this.server = new ServerStatus(options, gate, radar, background, log);
+        this.server = new ServerStatus(options, verifyTls, gate, radar, background, log, url -> Link.browse(url, log),
+                System::nanoTime);
         this.export = new ExportActions(model, store, options, inScope, background, log, tell, t -> clipboard.accept(t),
                 dialogParent, api.userInterface()::applyThemeToComponent);
         this.scopeCheck = new ScopeCheckButton(options, store, queue, scopeHosts, server::limitsNow, background, log, tell, ask);
@@ -421,6 +423,10 @@ public final class RadarTab extends JPanel {
         JPanel line = new JPanel(new BorderLayout(6, 0));
         line.add(server.tryAgainButton, BorderLayout.WEST);
         line.add(server.label, BorderLayout.CENTER);
+        JPanel notes = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        notes.add(server.releaseLink);
+        notes.add(server.tlsWarning);
+        line.add(notes, BorderLayout.EAST);
         JPanel row = new JPanel(new BorderLayout(12, 0));
         row.add(line, BorderLayout.CENTER);
         JPanel project = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));

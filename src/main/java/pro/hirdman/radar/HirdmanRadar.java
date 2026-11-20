@@ -105,7 +105,7 @@ public final class HirdmanRadar implements BurpExtension {
         Supplier<Component> suiteFrame = () -> api.userInterface().swingUtils().suiteFrame();
         RadarTab tab = Edt.call(() -> new RadarTab(api, store, queue, gate, settings::snapshot, projectSwitch, radar,
                 issues::reportAgain, siteMap::addSelected, () -> BurpSiteMap.inScopeHosts(api.siteMap(), api.scope()::isInScope),
-                suiteFrame));
+                settings::verifyTls, suiteFrame));
         tabRef.set(tab);
         api.userInterface().registerSuiteTab("Hirdman Radar", tab);
         api.userInterface().registerContextMenuItemsProvider(new RadarMenu(queue, tab, suiteFrame, projectSwitch::off,

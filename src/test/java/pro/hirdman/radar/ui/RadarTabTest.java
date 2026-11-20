@@ -138,7 +138,7 @@ class RadarTabTest {
             }, hosts -> {
                 siteMapped.add(hosts);
                 return "site map: " + hosts.size();
-            }, this::walk, () -> suiteFrame, Runnable::run);
+            }, this::walk, () -> true, () -> suiteFrame, Runnable::run);
         }
         return tab;
     }
@@ -482,7 +482,7 @@ class RadarTabTest {
     @Test
     void oneIssueForOneHostIsSingular() {
         tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, List::size, hosts -> "", this::walk,
-                () -> suiteFrame, Runnable::run);
+                () -> true, () -> suiteFrame, Runnable::run);
         options.set(new Options(Options.DEFAULT_SERVER, false, false, Risk.LOW, true, false, true, 5, false));
         scope.add("https://a.example.com/");
         checked("a.example.com", "high");
