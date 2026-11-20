@@ -539,26 +539,46 @@ public final class RadarTab extends JPanel {
         String raw = domainField.getText().trim();
         Optional<String> d = HostNames.domainInput(raw);
         // A line under the field, not a dialog: a typo is not worth a window.
-        String hint = d.isEmpty() ? (raw.isEmpty() ? "" : NOT_A_DOMAIN)
-                : !HostNames.isPublic(d.get()) ? internal(d.get())
-                : options.get().offForProject() ? PRIVATE_HINT : "";
-        String base = d.isPresent() && hint.isEmpty() ? ParentDomains.base(d.get()) : null;
-        showHint(base == null || base.equals(d.get()) ? hint : isHost(d.get(), base), base == null || base.equals(d.get()) ? null : base);
-        if (d.isEmpty() || !hint.isEmpty()) {
+        String problem = inputProblem(raw, d);
+        if (d.isEmpty() || !problem.isEmpty()) {
+            showHint(problem, null);
             domainField.requestFocusInWindow();
             return;
         }
-        domainField.setText(d.get());
-        Job job = queue.submit(kind, d.get(), List.of(), rescanBox.isSelected());
-        hintJob = hintButton.isVisible() ? job : null;
+        String domain = d.get();
+        // A host is checked as typed; the line offers its domain instead.
+        String base = ParentDomains.base(domain);
+        boolean host = !base.equals(domain);
+        if (host) {
+            showHint(isHost(domain, base), base);
+        } else {
+            showHint("", null);
+        }
+        domainField.setText(domain);
+        Job job = queue.submit(kind, domain, List.of(), rescanBox.isSelected());
+        hintJob = host ? job : null;
         hintKind = kind;
         // A click that joins an active job without a rescan leaves the box ticked: nothing was rescanned.
         if (job.rescan()) {
             rescanBox.setSelected(false);
         }
-        model.setDomain(d.get());
+        model.setDomain(domain);
         refreshDomains(store.domains());
         jobUpdates.mark();
+    }
+
+    /** Why the typed text cannot be checked, or "" when it can (or nothing was typed). */
+    private String inputProblem(String raw, Optional<String> d) {
+        if (d.isEmpty()) {
+            return raw.isEmpty() ? "" : NOT_A_DOMAIN;
+        }
+        if (!HostNames.isPublic(d.get())) {
+            return internal(d.get());
+        }
+        if (options.get().offForProject()) {
+            return PRIVATE_HINT;
+        }
+        return "";
     }
 
     static String internal(String name) {
@@ -772,8 +792,9 @@ public final class RadarTab extends JPanel {
         String host = options.get().serverHost();
         if (!Objects.equals(host, tipHost)) {
             tipHost = host;
-            projectBox.setToolTipText(privateTip(host));
-            projectHelp.setToolTipText(privateTip(host));
+            String tip = privateTip(host);
+            projectBox.setToolTipText(tip);
+            projectHelp.setToolTipText(tip);
         }
     }
 

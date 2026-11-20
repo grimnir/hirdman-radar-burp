@@ -46,10 +46,12 @@ record ServerLine(String text, boolean tryAgain, String linkText, String linkUrl
         if (note != null && !note.isEmpty()) {
             parts.add(note);
         }
+        String text = String.join(" ", parts);
         String latest = version(m.latestPluginVersion());
-        boolean newer = latest != null && !latest.isEmpty() && !Version.atLeast(pluginVersion, latest);
-        return new ServerLine(String.join(" ", parts), false, newer ? "Hirdman Radar " + latest + " is available" : null,
-                newer ? page : null);
+        if (latest != null && !latest.isEmpty() && !Version.atLeast(pluginVersion, latest)) {
+            return new ServerLine(text, false, "Hirdman Radar " + latest + " is available", page);
+        }
+        return new ServerLine(text, false);
     }
 
     static ServerLine failed(ApiException e, String host) {
