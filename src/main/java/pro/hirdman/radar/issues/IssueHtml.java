@@ -14,6 +14,8 @@ import java.util.regex.Pattern;
 final class IssueHtml {
 
     static final int MAX_LENGTH = 10_000;
+    /** Deeper tags are text: Swing's HTML views recurse per level and overflow the stack on deep nesting. */
+    static final int MAX_DEPTH = 6;
     private static final List<String> TAGS = List.of("p", "b", "i", "ul", "ol", "li");
     // Only the exact form the server writes: https, no attributes but href, no quotes, spaces or & in the address.
     private static final Pattern LINK = Pattern.compile("<a href=\"https://[A-Za-z0-9.-]{1,253}(?:/[A-Za-z0-9._~!$()*+,;=:@%/?#-]{0,300})?\">");
@@ -79,18 +81,20 @@ final class IssueHtml {
             out.append("<br>");
             return i + 4;
         }
-        for (String tag : TAGS) {
-            String opener = "<" + tag + ">";
-            if (s.startsWith(opener, i)) {
-                out.append(opener);
-                open.push(tag);
-                return i + opener.length();
+        if (open.size() < MAX_DEPTH) {
+            for (String tag : TAGS) {
+                String opener = "<" + tag + ">";
+                if (s.startsWith(opener, i)) {
+                    out.append(opener);
+                    open.push(tag);
+                    return i + opener.length();
+                }
             }
-        }
-        if (!open.contains("a") && link.region(i, s.length()).lookingAt()) {
-            out.append(link.group());
-            open.push("a");
-            return link.end();
+            if (!open.contains("a") && link.region(i, s.length()).lookingAt()) {
+                out.append(link.group());
+                open.push("a");
+                return link.end();
+            }
         }
         // Only an open tag can be closed.
         Optional<String> closed = open.stream().filter(t -> s.startsWith("</" + t + ">", i)).findFirst();
