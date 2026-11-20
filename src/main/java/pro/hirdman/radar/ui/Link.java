@@ -1,10 +1,8 @@
 package pro.hirdman.radar.ui;
 
 import java.awt.Cursor;
-import java.awt.Desktop;
 import java.awt.Font;
 import java.awt.Insets;
-import java.io.IOException;
 import java.net.URI;
 import javax.swing.JButton;
 import javax.swing.JComponent;
@@ -60,15 +58,6 @@ final class Link extends JButton {
 
     /** Opens the page in the system browser; blocks, so call it off the EDT. */
     static void browse(String url, TabLog log) {
-        try {
-            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                Desktop.getDesktop().browse(URI.create(url));
-                return;
-            }
-        } catch (IOException | RuntimeException e) {
-            log.error("Hirdman Radar: cannot open " + url + ": " + e);
-            return;
-        }
-        log.error("Hirdman Radar: no browser to open here. The page is " + url);
+        Browser.open(url, "page", log::error);
     }
 }

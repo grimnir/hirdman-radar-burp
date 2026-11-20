@@ -19,7 +19,6 @@ import pro.hirdman.radar.api.ServerEvent.BreachSource;
 import pro.hirdman.radar.api.ServerEvent.Finding;
 import pro.hirdman.radar.issues.IssuePlanner;
 import pro.hirdman.radar.model.HostResult;
-import pro.hirdman.radar.model.HostStatus;
 import pro.hirdman.radar.model.Risk;
 
 /** Rows of the plugin tab as a JSON or CSV file: counts and finding names, as the table shows them. */
@@ -35,8 +34,7 @@ public final class ResultsExport {
 
     /** Counts a check did not produce are null, never 0. */
     public static String json(@Nullable String domain, List<HostResult> rows, Predicate<String> inScope,
-            @Nullable String site, String version,
-            Instant now) {
+            @Nullable String site, String version, Instant now) {
         JsonObject root = new JsonObject();
         root.addProperty("tool", "Hirdman Radar");
         root.addProperty("version", version);
@@ -46,7 +44,7 @@ public final class ResultsExport {
         root.addProperty("note", NOTE);
         JsonArray hosts = new JsonArray();
         for (HostResult r : rows) {
-            boolean counted = counted(r);
+            boolean counted = r.checked();
             JsonObject h = new JsonObject();
             h.addProperty("host", r.host());
             h.addProperty("domain", r.domain());
@@ -115,7 +113,7 @@ public final class ResultsExport {
     public static String csv(List<HostResult> rows, Predicate<String> inScope) {
         StringBuilder b = new StringBuilder(HEADER).append('\n');
         for (HostResult r : rows) {
-            boolean counted = counted(r);
+            boolean counted = r.checked();
             String findings = r.findings().stream()
                     .map(f -> Objects.toString(Json.oneLine(f.name()), "") + " (" + Objects.toString(Json.oneLine(f.severity()), "") + ")")
                     .collect(Collectors.joining("; "));
@@ -150,7 +148,4 @@ public final class ResultsExport {
                 .collect(Collectors.joining("; "));
     }
 
-    private static boolean counted(HostResult r) {
-        return r.status() == HostStatus.CHECKED || r.status() == HostStatus.CLEAN;
-    }
 }

@@ -55,6 +55,7 @@ import javax.swing.Timer;
 import javax.swing.event.PopupMenuEvent;
 import javax.swing.event.PopupMenuListener;
 import org.jspecify.annotations.Nullable;
+import pro.hirdman.radar.Threads;
 import pro.hirdman.radar.Version;
 import pro.hirdman.radar.api.Meta;
 import pro.hirdman.radar.api.Radar;
@@ -369,10 +370,7 @@ public final class RadarTab extends JPanel {
     /** A few hosts go at once; more wait for a question with this hour's allowance, asked afresh in the background. */
     private void checkRest() {
         Optional<RestCheck> rest = model.rest();
-        if (rest.isEmpty()) {
-            return;
-        }
-        if (sayIfPrivate()) {
+        if (rest.isEmpty() || sayIfPrivate()) {
             return;
         }
         Options o = options.get();
@@ -851,9 +849,7 @@ public final class RadarTab extends JPanel {
     }
 
     private static void inBackground(Runnable r) {
-        Thread t = new Thread(r, "hirdman-radar-ui");
-        t.setDaemon(true);
-        t.start();
+        Threads.daemon("hirdman-radar-ui").newThread(r).start();
     }
 
     /** The Jobs strip grows with its rows up to about four of them, then scrolls. */

@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import org.jspecify.annotations.Nullable;
+import pro.hirdman.radar.Threads;
 import pro.hirdman.radar.model.HostResult;
 import pro.hirdman.radar.model.ResultStore;
 import pro.hirdman.radar.model.ResultsJson;
@@ -93,11 +94,7 @@ public final class ProjectStore {
     @SuppressWarnings("FutureReturnValueIgnored")
     public synchronized void start() {
         if (timer == null) {
-            ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "hirdman-radar-save");
-                t.setDaemon(true);
-                return t;
-            });
+            ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(Threads.daemon("hirdman-radar-save"));
             this.timer = timer;
             timer.scheduleWithFixedDelay(this::tick, EVERY.toMillis(), EVERY.toMillis(), TimeUnit.MILLISECONDS);
         }
