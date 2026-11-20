@@ -144,7 +144,7 @@ API-ключ не нужны. В списке расширений Burp он н�
 
 ## Сборка
 
-Нужен JDK 21. Gradle скачается через wrapper.
+Gradle запускается на JDK 17 и новее и сам скачивает JDK 21 для сборки.
 
 ```
 ./gradlew test jar
@@ -178,5 +178,5 @@ Jar появится в `build/libs/hirdman-radar-<версия>.jar`. Тест�
 [LICENSE](LICENSE). В LICENSE также есть разрешение PortSwigger собирать плагин
 и распространять его через BApp Store.
 
-Внутри jar лежат Gson и Error Prone annotations под лицензией Apache 2.0,
+Внутри jar лежит Gson под лицензией Apache 2.0,
 подробности в [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).

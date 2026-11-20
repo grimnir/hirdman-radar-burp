@@ -145,7 +145,7 @@ Requires Burp Suite 2026.7 or later (Montoya API).
 
 ## Build
 
-You need JDK 21. Gradle downloads through the wrapper.
+Gradle runs on JDK 17 or later and downloads JDK 21 for the build itself.
 
 ```
 ./gradlew test jar
@@ -178,5 +178,5 @@ is a short summary; the full text in [LICENSE](LICENSE) is what applies.
 LICENSE also gives PortSwigger permission to build the plugin and distribute it
 through the BApp Store.
 
-The jar bundles Gson and Error Prone annotations under the Apache License 2.0,
+The jar bundles Gson under the Apache License 2.0,
 see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
