@@ -101,6 +101,48 @@ class ResultsJsonTest {
     }
 
     @Test
+    void savedDataOverTheSizeLimitIsNotParsed() {
+        List<String> errors = new ArrayList<>();
+        String json = ResultsJson.write(sample());
+        ResultStore s = new ResultStore();
+        ResultsJson.readInto(s, json, errors::add, json.length() - 1, 100);
+        assertTrue(s.all().isEmpty());
+        assertEquals(List.of("Hirdman Radar: saved results are too large to load (" + json.length() + " characters), starting empty"),
+                errors);
+    }
+
+    @Test
+    void rowsPastTheLimitAreNotLoaded() {
+        List<String> errors = new ArrayList<>();
+        ResultStore s = new ResultStore();
+        s.found("example.org", List.of("www.example.org"));
+        ResultsJson.readInto(s, ResultsJson.write(sample()), errors::add, Integer.MAX_VALUE, 3);
+        assertEquals(3, s.all().size());
+        assertEquals(List.of("Hirdman Radar: the project holds more saved rows than the plugin loads (3), the rest were left out"),
+                errors);
+    }
+
+    @Test
+    void aRowWithAnOverlongTextIsSkipped() {
+        String name = "n".repeat(ResultsJson.MAX_STRING + 1);
+        String json = "{\"v\":2,\"hosts\":[{\"host\":\"a.example.com\",\"domain\":\"example.com\",\"status\":\"CHECKED\","
+                + "\"findings\":[{\"kind\":\"k\",\"severity\":\"high\",\"name\":\"" + name + "\"}]},"
+                + "{\"host\":\"b.example.com\",\"domain\":\"example.com\",\"status\":\"CLEAN\"}],"
+                + "\"texts\":[\"" + name + "\"]}";
+        List<String> errors = new ArrayList<>();
+        ResultStore s = ResultsJson.read(json, errors::add);
+        assertEquals(List.of("b.example.com"), s.all().stream().map(HostResult::host).toList());
+        assertEquals(List.of("Hirdman Radar: skipped 1 saved rows that could not be read"), errors);
+    }
+
+    @Test
+    void writesTheGivenRowsOnly() {
+        ResultStore s = sample();
+        ResultStore back = ResultsJson.read(ResultsJson.write(s.domain("other.org")), e -> { });
+        assertEquals(s.domain("other.org"), back.all());
+    }
+
+    @Test
     void oddVersionNumbersAreUnreadable() {
         for (String v : List.of("1e99999", "1.9", "4294967297", "-1", "1E0")) {
             List<String> errors = new ArrayList<>();

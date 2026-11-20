@@ -61,6 +61,20 @@ class ResultStoreTest {
     }
 
     @Test
+    void domainListenersHearWhichDomainsChanged() {
+        ResultStore s = new ResultStore();
+        List<java.util.Set<String>> heard = new java.util.ArrayList<>();
+        s.addDomainListener(heard::add);
+        s.found("example.com", List.of("a.example.com"));
+        s.apply("other.org", check("x.other.org", true, 0), T1);
+        s.noteLogin("a.example.com", FORM);
+        s.remove(List.of("a.example.com", "x.other.org"));
+        s.remove(List.of("gone.example.com"));
+        assertEquals(List.of(java.util.Set.of("example.com"), java.util.Set.of("other.org"), java.util.Set.of("example.com"),
+                java.util.Set.of("example.com", "other.org")), heard);
+    }
+
+    @Test
     void peekReadsARowWithoutTheLock() throws Exception {
         ResultStore s = new ResultStore();
         s.found("example.com", List.of("vpn.example.com"));

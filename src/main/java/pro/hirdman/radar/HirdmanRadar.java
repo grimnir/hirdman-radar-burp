@@ -67,6 +67,10 @@ public final class HirdmanRadar implements BurpExtension {
             if (t != null) {
                 t.jobsChanged();
             }
+            // Results cost the hourly limit: a finished job is saved at once, not on the next 30 s tick.
+            if (job.state().finished()) {
+                project.saveNow();
+            }
         });
 
         BurpIssues issues = new BurpIssues(api, () -> settings.snapshot().issueOptions());
