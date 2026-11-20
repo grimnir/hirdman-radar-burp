@@ -207,6 +207,8 @@ public final class JobRunner {
         String runningStatus;
         String lastError;
         boolean savedScan;
+        /** Set when the server stopped checking at the hourly host limit. */
+        boolean hourlyCut;
         /** Set when the domain scan left less important subdomains unchecked. */
         ServerEvent.SubdomainLimit limit;
         /** Hosts this run sends itself; null while the server scans the whole domain. */
@@ -503,6 +505,7 @@ public final class JobRunner {
                         c.lastError = err.message();
                     }
                     case ServerEvent.SubdomainLimit l -> c.limit = l;
+                    case ServerEvent.ServiceWarning w -> c.hourlyCut |= w.hourlyLimit();
                     case ServerEvent.Done d -> sawDone = true;
                 }
             }
@@ -691,8 +694,15 @@ public final class JobRunner {
     private void finish(Run c, boolean savedScan, String tail) {
         int hosts = c.rows.size();
         int leaks = (int) c.rows.values().stream().filter(HostResult::hasLeaks).count();
-        int failed = (int) c.rows.values().stream().filter(r -> r.status() == HostStatus.NOT_CHECKED).count();
-        String done = StatusText.done(hosts, leaks, failed, savedScan);
+        int unchecked = (int) c.rows.values().stream().filter(r -> r.status() == HostStatus.NOT_CHECKED).count();
+        String done;
+        if (c.hourlyCut) {
+            // The server stopped at the hourly limit: the unchecked hosts did not fail.
+            done = StatusText.doneAtHourlyLimit(hosts, leaks, unchecked, savedScan);
+            tail = StatusText.HOURLY_CUT + tail;
+        } else {
+            done = StatusText.done(hosts, leaks, unchecked, savedScan);
+        }
         // The saved-scan note ends with its own period.
         if (done.endsWith(".") && tail.startsWith(".")) {
             tail = tail.substring(1);

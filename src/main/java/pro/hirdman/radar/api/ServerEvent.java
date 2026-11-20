@@ -30,6 +30,19 @@ public sealed interface ServerEvent {
     record Done(int totalSubdomains, int uncheckedHosts) implements ServerEvent {
     }
 
+    /** A source or limit the server notes once per scan; "hourly_limit" means the rest of the hosts went unchecked. */
+    record ServiceWarning(String service, String message) implements ServerEvent {
+        public static final String HOURLY_LIMIT = "hourly_limit";
+
+        public ServiceWarning {
+            message = Json.oneLine(message);
+        }
+
+        public boolean hourlyLimit() {
+            return HOURLY_LIMIT.equals(service);
+        }
+    }
+
     /** The scan checked only the most important subdomains. */
     record SubdomainLimit(int count, int discovered) implements ServerEvent {
     }
@@ -144,6 +157,7 @@ public sealed interface ServerEvent {
             case "progress" -> Progress.class;
             case "error" -> ErrorEvent.class;
             case "done" -> Done.class;
+            case "service_warning" -> ServiceWarning.class;
             case "subdomain_limit" -> SubdomainLimit.class;
             case "domain_check", "subdomain_check" -> Check.class;
             default -> null;

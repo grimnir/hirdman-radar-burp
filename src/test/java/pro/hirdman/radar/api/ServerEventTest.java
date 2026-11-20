@@ -135,6 +135,12 @@ class ServerEventTest {
     }
 
     @Test
+    void serviceWarningNamesItsService() throws Exception {
+        assertEquals(new ServerEvent.ServiceWarning("hourly_limit", "Hourly host limit without a key reached"),
+                parse("service_warning", "{\"service\":\"hourly_limit\",\"message\":\"Hourly host limit without a key reached\"}"));
+    }
+
+    @Test
     void unknownEventIgnored() throws Exception {
         assertEquals(Optional.empty(), ServerEvent.parse(event("db_stats", "{\"total\":5}")));
     }

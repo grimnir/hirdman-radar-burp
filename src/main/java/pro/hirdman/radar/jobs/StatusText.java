@@ -42,6 +42,13 @@ public final class StatusText {
         return "Done: " + summary(hosts, withLeaks, 0, failed) + (savedScan ? SAVED_SCAN : "");
     }
 
+    public static final String HOURLY_CUT = ". Hourly limit reached: the rest are listed as Not checked yet.";
+
+    /** A scan the server stopped at the hourly limit: its unchecked hosts are not failures. */
+    public static String doneAtHourlyLimit(int hosts, int withLeaks, int notCheckedYet, boolean savedScan) {
+        return "Done: " + summary(hosts, withLeaks, notCheckedYet, 0) + (savedScan ? SAVED_SCAN : "");
+    }
+
     /** "120 hosts, 9 with leaks, 40 not checked yet, 3 failed"; zero parts after the leaks are left out. */
     public static String summary(long hosts, long withLeaks, long notCheckedYet, long failed) {
         return count(hosts, "host") + ", " + withLeaks + " with leaks"

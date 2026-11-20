@@ -851,6 +851,28 @@ class JobRunnerTest {
     }
 
     @Test
+    void aScanCutByTheHourlyLimitSaysSoInsteadOfFailed() {
+        // Without a key a scan spends the hourly host limit; the server leaves the rest unchecked and warns once.
+        radar.polls.add(page(5, true, rootCheck("example.com"), check("vpn.example.com", false),
+                ev("service_warning", "{\"service\":\"hourly_limit\",\"message\":\"Hourly host limit without a key reached\"}"),
+                check("mail.example.com", false), done(3, 2)));
+        Job j = domainJob();
+        run(j);
+        assertEquals("Done: 3 hosts, 0 with leaks, 2 not checked yet. Hourly limit reached: the rest are listed as Not checked yet.",
+                j.status());
+        assertEquals(HostStatus.NOT_CHECKED, store.host("vpn.example.com").orElseThrow().status());
+    }
+
+    @Test
+    void otherServiceWarningsChangeNothing() {
+        radar.polls.add(page(3, true, rootCheck("example.com"),
+                ev("service_warning", "{\"service\":\"crtsh\",\"message\":\"crt.sh did not answer\"}"), done(1, 0)));
+        Job j = domainJob();
+        run(j);
+        assertEquals("Done: 1 host, 0 with leaks", j.status());
+    }
+
+    @Test
     void aLargePerimeterListsTheRestAsNotCheckedYet() {
         radar.polls.add(page(4, true, rootCheck("example.com"), check("vpn.example.com", true), limit(), done(1, 0)));
         radar.subdomains.add(subdomains("vpn.example.com", "rest1.example.com", "rest2.example.com"));
