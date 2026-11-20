@@ -128,6 +128,7 @@ public final class RadarTab extends JPanel {
     final JButton hintButton = new Link("");
     final ScopeCheckButton scopeCheck;
     final JobsPanel jobsPanel;
+    final DoneLine doneLine = new DoneLine();
     final JScrollPane jobsScroll;
     final JComboBox<String> domainBox = new JComboBox<>();
     final JLabel summaryLabel = plain(new JLabel());
@@ -281,7 +282,10 @@ public final class RadarTab extends JPanel {
         top.add(form, BorderLayout.SOUTH);
         JPanel north = new JPanel(new BorderLayout(0, 6));
         north.add(top, BorderLayout.NORTH);
-        north.add(jobsScroll, BorderLayout.CENTER);
+        JPanel jobs = new JPanel(new BorderLayout(0, 4));
+        jobs.add(doneLine.panel, BorderLayout.NORTH);
+        jobs.add(jobsScroll, BorderLayout.CENTER);
+        north.add(jobs, BorderLayout.CENTER);
         return north;
     }
 
@@ -713,7 +717,9 @@ public final class RadarTab extends JPanel {
     }
 
     private void flushJobs() {
-        jobsPanel.show(queue.jobs());
+        List<Job> jobs = queue.jobs();
+        jobsPanel.show(jobs);
+        doneLine.show(jobs, store::domain);
         jobsScroll.setVisible(jobsPanel.hasJobs());
         showEmptyState();
     }
