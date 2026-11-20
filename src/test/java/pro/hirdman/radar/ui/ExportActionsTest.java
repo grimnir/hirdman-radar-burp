@@ -53,7 +53,8 @@ class ExportActionsTest {
 
     @Test
     void theMenuOffersJsonCsvAndTheSummary() {
-        assertEquals("Export", actions.button.getText());
+        assertEquals("Export \u25BE", actions.button.getText());
+        assertEquals(java.awt.event.KeyEvent.VK_E, actions.button.getMnemonic());
         List<String> items = new ArrayList<>();
         for (Component c : actions.menu.getComponents()) {
             if (c instanceof JMenuItem i) {

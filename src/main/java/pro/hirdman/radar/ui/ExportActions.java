@@ -1,6 +1,7 @@
 package pro.hirdman.radar.ui;
 
 import java.awt.Component;
+import java.awt.event.KeyEvent;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -35,7 +36,8 @@ final class ExportActions {
 
     static final String EXPORT_FAILED = "Could not save the export. Details are in the extension's Errors tab.";
 
-    final JButton button = new JButton("Export");
+    /** The arrow says the button opens a menu. */
+    final JButton button = new JButton("Export \u25BE");
     final JPopupMenu menu = new JPopupMenu();
     /** Asks where to save the export; tests replace it. */
     Function<String, Optional<Path>> saveDialog = this::chooseFile;
@@ -82,6 +84,7 @@ final class ExportActions {
         menu.add(csv);
         menu.addSeparator();
         menu.add(summary);
+        button.setMnemonic(KeyEvent.VK_E);
         button.addActionListener(e -> menu.show(button, 0, button.getHeight()));
     }
 
