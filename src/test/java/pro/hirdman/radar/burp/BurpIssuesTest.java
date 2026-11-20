@@ -61,8 +61,8 @@ class BurpIssuesTest {
             return null;
         });
         MontoyaApi api = fake(MontoyaApi.class, Map.of("scope", scope, "siteMap", siteMap, "logging", logging));
-        return new BurpIssues(api, () -> options, () -> {
-            calls.add("existing");
+        return new BurpIssues(api, () -> options, prefix -> {
+            calls.add("existing " + prefix);
             if (lookupFails) {
                 throw new IllegalStateException("lookup failed");
             }
@@ -97,7 +97,7 @@ class BurpIssuesTest {
         assertEquals(0, b.report(row(HostStatus.CHECKED, STEALER, WORK)));
         assertEquals(List.of(P + STEALER, P + WORK), added);
         assertEquals("scope https://vpn.example.com/", calls.get(0));
-        assertEquals("existing", calls.get(1));
+        assertEquals("existing https://vpn.example.com/", calls.get(1));
     }
 
     @Test
@@ -118,7 +118,8 @@ class BurpIssuesTest {
         calls.clear();
         assertEquals(0, b.reportAgain(List.of(row(HostStatus.CHECKED, STEALER), row("mail.example.com", HostStatus.CHECKED))));
         assertEquals(0, b.reportAgain(List.of(row(HostStatus.CHECKED, STEALER))));
-        assertEquals(2, calls.stream().filter("existing"::equals).count());
+        assertEquals(List.of("existing https://vpn.example.com/", "existing https://vpn.example.com/"),
+                calls.stream().filter(c -> c.startsWith("existing")).toList());
         assertEquals(List.of(P + STEALER), added);
     }
 
@@ -221,8 +222,8 @@ class BurpIssuesTest {
     }
 
     @Test
-    void burpIsAskedForItsIssuesOncePerSession() {
-        // Burp's lookup walks every issue of the project, so it is done once, not once per host.
+    void burpIsAskedOnlyForTheIssuesOfEachHostOncePerSession() {
+        // All issues of a big project would be loaded at once; a prefix lookup per host loads only its own.
         others.add(issue(P + WORK, "https://VPN.example.com:443/"));
         others.add(issue(P + STEALER, "https://other.example.com/"));
         others.add(issue("Cleartext submission of password", "https://vpn.example.com/"));
@@ -232,6 +233,9 @@ class BurpIssuesTest {
         assertEquals(List.of(P + STEALER), added);
         assertEquals(2, b.report(row("mail.example.com", HostStatus.CHECKED, STEALER, WORK)));
         assertEquals(0, b.report(row("other.example.com", HostStatus.CHECKED, STEALER)));
-        assertEquals(1, calls.stream().filter("existing"::equals).count(), calls.toString());
+        assertEquals(0, b.report(row(HostStatus.CHECKED, STEALER, WORK)));
+        // The fake answers every lookup with all issues, so other.example.com's was known already.
+        assertEquals(List.of("existing https://vpn.example.com/", "existing https://mail.example.com/"),
+                calls.stream().filter(c -> c.startsWith("existing")).toList());
     }
 }

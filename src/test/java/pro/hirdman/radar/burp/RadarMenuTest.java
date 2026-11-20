@@ -207,6 +207,32 @@ class RadarMenuTest {
     }
 
     @Test
+    void aHugeSelectionStopsAtAThousandHosts() {
+        java.util.concurrent.atomic.AtomicInteger read = new java.util.concurrent.atomic.AtomicInteger();
+        List<HttpRequestResponse> selected = new ArrayList<>();
+        for (int i = 0; i < 1500; i++) {
+            HttpRequestResponse plain = rr("h" + i + ".example.com");
+            selected.add(fake(HttpRequestResponse.class, (m, a) -> {
+                read.incrementAndGet();
+                return m.equals("request") ? plain.request() : Fakes.DEFAULT;
+            }));
+        }
+        Map<String, Object> answers = new HashMap<>();
+        answers.put("selectedRequestResponses", selected);
+        List<Component> items = new RadarMenu(queue, tab, confirm, revealed::add).provideMenuItems(fake(ContextMenuEvent.class, answers));
+        assertTrue(texts((JMenu) items.get(0)).contains("Check " + RadarMenu.MAX_HOSTS + " selected hosts for leaks"));
+        assertEquals(RadarMenu.MAX_HOSTS, read.get());
+    }
+
+    @Test
+    void repeatedHostsAreTakenOnce() {
+        String[] same = new String[3000];
+        Arrays.fill(same, "a.example.com");
+        find(menu(same), "Show in Hirdman Radar tab").doClick(0);
+        assertEquals(List.of(List.of("a.example.com")), revealed);
+    }
+
+    @Test
     void showPassesTheSelectedHostsToTheTab() {
         find(menu("A.example.com", "10.0.0.1", "b.example.com"), "Show in Hirdman Radar tab").doClick(0);
         assertEquals(List.of(List.of("A.example.com", "10.0.0.1", "b.example.com")), revealed);
