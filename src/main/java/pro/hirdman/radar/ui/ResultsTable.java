@@ -4,15 +4,20 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Font;
 import java.awt.FontMetrics;
+import java.awt.KeyboardFocusManager;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
+import java.text.NumberFormat;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import javax.swing.JTable;
+import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
-import javax.swing.UIManager;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableCellRenderer;
@@ -26,6 +31,9 @@ public final class ResultsTable extends JTable {
 
     /** Blank (unknown) counts sort below zero. */
     private static final Comparator<Object> COUNTS = Comparator.comparingLong(v -> v instanceof Number n ? n.longValue() : -1);
+    /** Model columns that hold counts. */
+    private static final Set<Integer> COUNT_COLUMNS = Set.of(ResultsTableModel.STEALER, ResultsTableModel.WORK,
+            ResultsTableModel.PERSONAL, ResultsTableModel.DB);
 
     /** Header tips by model column; Host needs none. */
     private static final List<String> HEADER_TIPS = Arrays.asList(null,
@@ -33,32 +41,46 @@ public final class ResultsTable extends JTable {
             "In or out of Burp's target scope.",
             "Infostealer log records that mention the host.",
             "Breach records with work email addresses.",
-            "Breach records with credentials for the host, whoever they belong to.",
+            "Breach records with credentials for a site on this host, whoever they belong to. For a public service these are"
+                    + " its users.",
             "Records in breached databases that mention the host, with an email or a URL.",
             "Newest known breach date among the 10 largest breach sources. Sources without a date, infostealer logs and"
                     + " database records are not dated, so newer leaks may exist. Hover a cell for the sources.",
             "A login page seen in Burp traffic for this host.",
             "Hover a cell for the time of the last check.");
-    /** The widest usual value of each model column. */
-    private static final List<String> SAMPLES = List.of("subdomain.example-domain.com", "Medium", "out", "000000", "000000",
-            "000000", "0000000", "2024-03-21", "FortiGate SSL VPN", "Checked (nothing found)");
+    /** The widest usual value of each model column; Host is measured on its rows. */
+    private static final List<String> SAMPLES = List.of("", "Medium", "out", "000,000", "000,000",
+            "000,000", "0,000,000", "2024-03-21", "FortiGate SSL VPN", "Checked (nothing found)");
+
+    /** Room for the sort arrow and the cell insets. */
+    private static final int MARGIN = 24;
 
     private final ResultsTableModel model;
     private final Renderer renderer = new Renderer();
+    /** Status's own fitted width, the least it gets when the rest is shared out. */
+    private int statusWidth;
 
     public ResultsTable(ResultsTableModel model) {
         super(model);
         this.model = model;
         TableRowSorter<ResultsTableModel> sorter = new TableRowSorter<>(model);
-        for (int c : new int[] {ResultsTableModel.STEALER, ResultsTableModel.WORK, ResultsTableModel.PERSONAL, ResultsTableModel.DB}) {
+        for (int c : COUNT_COLUMNS) {
             sorter.setComparator(c, COUNTS);
         }
         setRowSorter(sorter);
         setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         setFillsViewportHeight(true);
+        setAutoResizeMode(AUTO_RESIZE_LAST_COLUMN);
+        // Tab moves on to the next control instead of the next cell.
+        setFocusTraversalKeys(KeyboardFocusManager.FORWARD_TRAVERSAL_KEYS, Set.of(KeyStroke.getKeyStroke(KeyEvent.VK_TAB, 0),
+                KeyStroke.getKeyStroke(KeyEvent.VK_TAB, InputEvent.CTRL_DOWN_MASK)));
+        setFocusTraversalKeys(KeyboardFocusManager.BACKWARD_TRAVERSAL_KEYS, Set.of(
+                KeyStroke.getKeyStroke(KeyEvent.VK_TAB, InputEvent.SHIFT_DOWN_MASK),
+                KeyStroke.getKeyStroke(KeyEvent.VK_TAB, InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK)));
         // JTable answers tooltips only once registered.
         setToolTipText("");
         getTableHeader().addPropertyChangeListener("font", e -> fitColumns());
+        model.addTableModelListener(e -> fitHost());
         fitColumns();
     }
 
@@ -71,21 +93,70 @@ public final class ResultsTable extends JTable {
         }
     }
 
-    /** Each column as wide as its usual value or its name; Host alone grows without a cap. */
+    /** Each column as wide as its usual value or its name, Host as its longest name; Status alone grows without a cap. */
     private void fitColumns() {
         FontMetrics cells = getFontMetrics(getFont());
-        JTableHeader header = getTableHeader();
-        // Themes often draw the header bold or larger than the cells.
-        FontMetrics names = header == null || header.getFont() == null ? cells : header.getFontMetrics(header.getFont());
+        FontMetrics names = headerMetrics(cells);
         for (int c = 0; c < getColumnCount(); c++) {
             TableColumn col = getColumnModel().getColumn(c);
             int m = col.getModelIndex();
-            int width = Math.max(cells.stringWidth(SAMPLES.get(m)), names.stringWidth(model.getColumnName(m))) + 24;
+            if (m == ResultsTableModel.HOST) {
+                continue;
+            }
+            int width = Math.max(cells.stringWidth(SAMPLES.get(m)), names.stringWidth(model.getColumnName(m))) + MARGIN;
             col.setPreferredWidth(width);
-            if (m != ResultsTableModel.HOST) {
+            if (m == ResultsTableModel.STATUS) {
+                col.setMaxWidth(Integer.MAX_VALUE);
+                statusWidth = width;
+            } else {
                 col.setMaxWidth(width * 3);
             }
         }
+        fitHost();
+    }
+
+    /** Themes often draw the header bold or larger than the cells. */
+    private FontMetrics headerMetrics(FontMetrics cells) {
+        JTableHeader header = getTableHeader();
+        return header == null || header.getFont() == null ? cells : header.getFontMetrics(header.getFont());
+    }
+
+    /** Host is capped at its longest name, so the counts sit next to the names. */
+    private void fitHost() {
+        FontMetrics cells = getFontMetrics(getFont());
+        int width = headerMetrics(cells).stringWidth(model.getColumnName(ResultsTableModel.HOST));
+        for (int i = 0; i < model.getRowCount(); i++) {
+            width = Math.max(width, cells.stringWidth(model.rowAt(i).host()));
+        }
+        width += MARGIN;
+        for (int c = 0; c < getColumnCount(); c++) {
+            TableColumn col = getColumnModel().getColumn(c);
+            if (col.getModelIndex() == ResultsTableModel.HOST && col.getMaxWidth() != width) {
+                col.setMaxWidth(width);
+                col.setPreferredWidth(width);
+            }
+        }
+    }
+
+    /** Outside a drag, the width the other columns leave goes to Status. */
+    @Override
+    public void doLayout() {
+        if (tableHeader == null || tableHeader.getResizingColumn() == null) {
+            int others = 0;
+            TableColumn status = null;
+            for (int c = 0; c < getColumnCount(); c++) {
+                TableColumn col = getColumnModel().getColumn(c);
+                if (col.getModelIndex() == ResultsTableModel.STATUS) {
+                    status = col;
+                } else {
+                    others += col.getPreferredWidth();
+                }
+            }
+            if (status != null) {
+                status.setPreferredWidth(Math.max(statusWidth, getWidth() - others));
+            }
+        }
+        super.doLayout();
     }
 
     @Override
@@ -179,8 +250,11 @@ public final class ResultsTable extends JTable {
         }
     }
 
-    /** Colour marks only the Risk word and non-zero Infostealer, Work (High) and Personal (Medium); zero stays neutral. */
+    /** Colour marks only the Risk word and non-zero Infostealer, Work (High) and Host logins (Medium); zero stays neutral. */
     private static final class Renderer extends DefaultTableCellRenderer {
+
+        /** "10,016", as in the issue text. */
+        private final NumberFormat counts = NumberFormat.getIntegerInstance(Locale.US);
 
         Renderer() {
             putClientProperty("html.disable", Boolean.TRUE);
@@ -189,14 +263,21 @@ public final class ResultsTable extends JTable {
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value, boolean selected, boolean focus, int row,
                 int column) {
-            Object shown = value instanceof Risk r ? r.label() : value;
+            int modelColumn = table.convertColumnIndexToModel(column);
+            Object shown = switch (value) {
+                case Risk r -> r.label();
+                case Number n -> counts.format(n);
+                case null, default -> value;
+            };
             super.getTableCellRendererComponent(table, shown, selected, focus, row, column);
+            setHorizontalAlignment(COUNT_COLUMNS.contains(modelColumn) ? RIGHT : LEADING);
             if (selected) {
                 setForeground(table.getSelectionForeground());
             } else {
-                Color c = RiskColors.text(colorRisk(value, table.convertColumnIndexToModel(column)),
-                        RiskColors.dark(UIManager.getColor("Table.background")));
-                setForeground(c != null ? c : table.getForeground());
+                // The cell's own background: striped rows differ from the table's.
+                Color bg = getBackground();
+                Color c = RiskColors.text(colorRisk(value, modelColumn), RiskColors.dark(bg));
+                setForeground(RiskColors.readable(c, table.getForeground(), bg));
             }
             return this;
         }

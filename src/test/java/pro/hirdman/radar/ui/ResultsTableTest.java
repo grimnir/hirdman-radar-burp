@@ -97,6 +97,46 @@ class ResultsTableTest {
     }
 
     @Test
+    void riskColorsFollowTheCellBackground() {
+        checked("a.example.com", 3, 0, 5, 0, "high");
+        show();
+        for (int rgb : new int[] {0x383838, 0x333333, 0xEEEEEE, 0xF2F2F2}) {
+            java.awt.Color bg = new java.awt.Color(rgb);
+            table.setBackground(bg);
+            boolean dark = RiskColors.dark(bg);
+            JLabel risk = cell(0, ResultsTableModel.RISK);
+            assertEquals(bg, risk.getBackground());
+            assertEquals(RiskColors.text(Risk.HIGH, dark), risk.getForeground());
+            assertTrue(RiskColors.contrast(risk.getForeground(), bg) >= RiskColors.MIN_CONTRAST, Integer.toHexString(rgb));
+            assertEquals(RiskColors.text(Risk.MEDIUM, dark), cell(0, ResultsTableModel.PERSONAL).getForeground());
+        }
+        // A background no risk colour reads on: the theme's text colour.
+        table.setBackground(new java.awt.Color(0x808080));
+        assertEquals(table.getForeground(), cell(0, ResultsTableModel.RISK).getForeground());
+    }
+
+    @Test
+    void countsAreRightAlignedWithThousandsSeparators() {
+        checked("a.example.com", 10016, 1234, 0, 43778, null);
+        store.apply(D, new Check(false, "b.example.com", 0, 0, 0, 0, 0, false, List.of()), Instant.EPOCH);
+        show();
+        assertEquals("10,016", cell(0, ResultsTableModel.STEALER).getText());
+        assertEquals("1,234", cell(0, ResultsTableModel.WORK).getText());
+        assertEquals("0", cell(0, ResultsTableModel.PERSONAL).getText());
+        assertEquals("43,778", cell(0, ResultsTableModel.DB).getText());
+        for (int c : new int[] {ResultsTableModel.STEALER, ResultsTableModel.WORK, ResultsTableModel.PERSONAL, ResultsTableModel.DB}) {
+            assertEquals(javax.swing.SwingConstants.RIGHT, cell(0, c).getHorizontalAlignment());
+            assertEquals(javax.swing.SwingConstants.RIGHT, cell(1, c).getHorizontalAlignment());
+            assertEquals("", cell(1, c).getText());
+        }
+        assertEquals(javax.swing.SwingConstants.LEADING, cell(0, ResultsTableModel.HOST).getHorizontalAlignment());
+        assertEquals(javax.swing.SwingConstants.LEADING, cell(0, ResultsTableModel.STATUS).getHorizontalAlignment());
+        // Copies and exports keep plain numbers.
+        assertEquals("10016", model.text(0, ResultsTableModel.STEALER));
+        assertTrue(model.csv(new int[] {0}).contains(",10016,1234,0,43778,"));
+    }
+
+    @Test
     void selectedRowsUseTheSelectionColors() {
         checked("a.example.com", 3, 0, 0, 0, "high");
         show();
@@ -134,13 +174,27 @@ class ResultsTableTest {
     }
 
     @Test
+    void anUnchangedRefreshKeepsTheSelectionAndItsLead() {
+        checked("a.example.com", 0, 0, 0, 0, null);
+        checked("b.example.com", 0, 0, 0, 0, null);
+        checked("c.example.com", 0, 0, 0, 0, null);
+        show();
+        table.setRowSelectionInterval(0, 1);
+        model.refresh();
+        table.refreshKeepingSelection();
+        assertEquals(List.of("a.example.com", "b.example.com"), table.selectedHosts());
+        assertEquals(1, table.getSelectionModel().getLeadSelectionIndex());
+        assertEquals(0, table.getSelectionModel().getAnchorSelectionIndex());
+    }
+
+    @Test
     void selectedModelRowsFollowTheView() {
         checked("a.example.com", 0, 0, 0, 0, null);
         checked("b.example.com", 0, 0, 0, 0, null);
         show();
         table.getRowSorter().setSortKeys(List.of(new RowSorter.SortKey(ResultsTableModel.HOST, SortOrder.DESCENDING)));
         table.setRowSelectionInterval(0, 1);
-        assertEquals("Host,Risk,Scope,Infostealer,Work,Personal,DB rec,Latest breach,Login page,Status\n"
+        assertEquals("Host,Risk,Scope,Infostealer,Work,Host logins,DB records,Latest breach,Login page,Status\n"
                 + "b.example.com,,in,0,0,0,0,,,Checked (nothing found)\na.example.com,,in,0,0,0,0,,,Checked (nothing found)\n", model.csv(table.selectedModelRows()));
     }
 
@@ -163,21 +217,58 @@ class ResultsTableTest {
     }
 
     @Test
-    void columnsAreSizedToTheirContentAndHostTakesTheRest() {
+    void columnsAreSizedToTheirContentAndStatusTakesTheRest() {
         ResultsTable t = new ResultsTable(new ResultsTableModel(new ResultStore(), h -> true));
         java.awt.FontMetrics fm = t.getFontMetrics(t.getFont());
         javax.swing.table.TableColumnModel cols = t.getColumnModel();
-        assertTrue(cols.getColumn(0).getPreferredWidth() >= fm.stringWidth("subdomain.example-domain.com"));
         assertTrue(cols.getColumn(ResultsTableModel.STATUS).getPreferredWidth() >= fm.stringWidth("Checked (nothing found)"));
         for (int c = 0; c < cols.getColumnCount(); c++) {
             // The name and the sort arrow fit.
             assertTrue(cols.getColumn(c).getPreferredWidth() >= fm.stringWidth(t.getColumnName(c)) + 16, t.getColumnName(c));
         }
         assertTrue(cols.getColumn(2).getPreferredWidth() < cols.getColumn(ResultsTableModel.STATUS).getPreferredWidth());
-        assertEquals(Integer.MAX_VALUE, cols.getColumn(0).getMaxWidth());
-        for (int c = 1; c < cols.getColumnCount(); c++) {
+        assertEquals(Integer.MAX_VALUE, cols.getColumn(ResultsTableModel.STATUS).getMaxWidth());
+        for (int c = 0; c < cols.getColumnCount() - 1; c++) {
             assertTrue(cols.getColumn(c).getMaxWidth() < Integer.MAX_VALUE, t.getColumnName(c));
         }
+    }
+
+    @Test
+    void hostIsAsWideAsTheLongestNameAndStatusGetsTheRest() {
+        checked("a.example.com", 0, 0, 0, 0, null);
+        checked("a-rather-long-subdomain-name.example.com", 0, 0, 0, 0, null);
+        show();
+        java.awt.FontMetrics fm = table.getFontMetrics(table.getFont());
+        javax.swing.table.TableColumnModel cols = table.getColumnModel();
+        javax.swing.table.TableColumn host = cols.getColumn(ResultsTableModel.HOST);
+        int longest = fm.stringWidth("a-rather-long-subdomain-name.example.com");
+        assertTrue(host.getPreferredWidth() >= longest && host.getPreferredWidth() <= longest + 32, host.getPreferredWidth() + "");
+        assertEquals(host.getPreferredWidth(), host.getMaxWidth());
+        table.setSize(2000, 400);
+        table.doLayout();
+        assertEquals(host.getPreferredWidth(), host.getWidth());
+        int others = 0;
+        for (int c = 0; c < ResultsTableModel.STATUS; c++) {
+            assertEquals(cols.getColumn(c).getPreferredWidth(), cols.getColumn(c).getWidth(), table.getColumnName(c));
+            others += cols.getColumn(c).getWidth();
+        }
+        assertEquals(2000 - others, cols.getColumn(ResultsTableModel.STATUS).getWidth());
+        // The widest name grows the column on the next refresh.
+        checked("an-even-longer-subdomain-name-than-the-other-one.example.com", 0, 0, 0, 0, null);
+        model.refresh();
+        assertTrue(host.getMaxWidth() >= fm.stringWidth("an-even-longer-subdomain-name-than-the-other-one.example.com"));
+    }
+
+    @Test
+    void tabLeavesTheTable() {
+        java.util.Set<java.awt.AWTKeyStroke> forward = table.getFocusTraversalKeys(java.awt.KeyboardFocusManager.FORWARD_TRAVERSAL_KEYS);
+        java.util.Set<java.awt.AWTKeyStroke> backward = table.getFocusTraversalKeys(java.awt.KeyboardFocusManager.BACKWARD_TRAVERSAL_KEYS);
+        assertTrue(forward.contains(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_TAB, 0)), forward.toString());
+        assertTrue(backward.contains(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_TAB,
+                java.awt.event.InputEvent.SHIFT_DOWN_MASK)), backward.toString());
+        table.updateUI();
+        assertTrue(table.getFocusTraversalKeys(java.awt.KeyboardFocusManager.FORWARD_TRAVERSAL_KEYS)
+                .contains(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_TAB, 0)));
     }
 
     @Test
@@ -195,7 +286,8 @@ class ResultsTableTest {
                 "In or out of Burp's target scope.",
                 "Infostealer log records that mention the host.",
                 "Breach records with work email addresses.",
-                "Breach records with credentials for the host, whoever they belong to.",
+                "Breach records with credentials for a site on this host, whoever they belong to. For a public service these"
+                        + " are its users.",
                 "Records in breached databases that mention the host, with an email or a URL.",
                 "Newest known breach date among the 10 largest breach sources. Sources without a date, infostealer logs and"
                         + " database records are not dated, so newer leaks may exist. Hover a cell for the sources.",

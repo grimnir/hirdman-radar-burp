@@ -56,7 +56,7 @@ class ResultsTableModelTest {
         for (int i = 0; i < m.getColumnCount(); i++) {
             names.add(m.getColumnName(i));
         }
-        assertEquals(List.of("Host", "Risk", "Scope", "Infostealer", "Work", "Personal", "DB rec", "Latest breach", "Login page", "Status"), names);
+        assertEquals(List.of("Host", "Risk", "Scope", "Infostealer", "Work", "Host logins", "DB records", "Latest breach", "Login page", "Status"), names);
     }
 
     @Test
@@ -185,7 +185,7 @@ class ResultsTableModelTest {
         ResultsTableModel m = model(h -> !h.startsWith("old2"));
         assertEquals("vpn.example.com", m.rowAt(0).host());
         assertEquals(List.of("old.example.com", "old2.example.com"), m.failed());
-        assertEquals("Host,Risk,Scope,Infostealer,Work,Personal,DB rec,Latest breach,Login page,Status\n"
+        assertEquals("Host,Risk,Scope,Infostealer,Work,Host logins,DB records,Latest breach,Login page,Status\n"
                 + "vpn.example.com,High,in,12,3,40,7,,,Checked (leaks found)\n"
                 + "old2.example.com,,out,,,,,,,Check failed\n", m.csv(new int[] {0, 2}));
         store.noteLogin("vpn.example.com", new LoginPage(LoginPage.Kind.KNOWN_PATH, "FortiGate SSL VPN", "/remote/login"));
@@ -255,5 +255,28 @@ class ResultsTableModelTest {
         assertEquals(1, m.leaksOutOfScope());
         assertTrue(m.inScope("a.example.com"));
         assertTrue(!m.inScope("b.example.com"));
+    }
+
+    @Test
+    void csvQuotesCellsAndDefusesFormulas() {
+        checked("a.example.com", 0, 0, 0, 0, 0);
+        store.noteLogin("a.example.com", new LoginPage(LoginPage.Kind.KNOWN_PATH, "=HYPERLINK(\"x\"),y", "/login"));
+        ResultsTableModel m = model(h -> true);
+        assertEquals("a.example.com,,in,0,0,0,0,,\"'=HYPERLINK(\"\"x\"\"),y\",Checked (nothing found)",
+                m.csv(new int[] {0}).split("\n")[1]);
+    }
+
+    @Test
+    void anUnchangedRefreshFiresNothing() {
+        checked("a.example.com", 1, 0, 0, 0, 0, finding("high"));
+        ResultsTableModel m = model(h -> true);
+        List<javax.swing.event.TableModelEvent> events = new ArrayList<>();
+        m.addTableModelListener(events::add);
+        m.refresh();
+        assertEquals(0, events.size());
+        checked("a.example.com", 2, 0, 0, 0, 0, finding("high"));
+        m.refresh();
+        assertEquals(1, events.size());
+        assertEquals("2", m.text(0, ResultsTableModel.STEALER));
     }
 }

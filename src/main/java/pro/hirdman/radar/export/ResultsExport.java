@@ -24,7 +24,7 @@ import pro.hirdman.radar.model.Risk;
 public final class ResultsExport {
 
     public static final String NOTE = "Counts only: no accounts, passwords, raw records or dumps.";
-    static final String HEADER = "host,domain,status,risk,scope,stealer,work_accounts,personal_accounts,db_records,latest_breach,"
+    static final String HEADER = "host,domain,status,risk,scope,stealer,work_accounts,host_logins,db_records,latest_breach,"
             + "checked_at,breach_sources,findings,login_page";
     private static final Gson PRETTY = new GsonBuilder().setPrettyPrinting().serializeNulls().disableHtmlEscaping().create();
 
@@ -112,7 +112,7 @@ public final class ResultsExport {
     private static final Pattern NEEDS_QUOTES = Pattern.compile("[,\"\r\n]");
 
     /** RFC 4180 quoting; a leading = + - @ gets a quote mark so spreadsheets do not run it as a formula. */
-    static String cell(String v) {
+    public static String cell(String v) {
         if (v == null || v.isEmpty()) {
             return "";
         }

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Color;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import pro.hirdman.radar.model.Risk;
 
@@ -13,20 +14,28 @@ class RiskColorsTest {
 
     static final Color LIGHT_BG = Color.WHITE;
     static final Color DARK_BG = new Color(0x2B2B2B);
+    /** Table backgrounds of both themes, the striped rows included. */
+    static final List<Color> LIGHT_ROWS = List.of(LIGHT_BG, new Color(0xEEEEEE), new Color(0xF2F2F2));
+    static final List<Color> DARK_ROWS = List.of(DARK_BG, new Color(0x383838), new Color(0x333333));
 
     @Test
-    void riskColorsMeetContrast() {
-        assertTrue(RiskColors.contrast(RiskColors.text(Risk.HIGH, false), LIGHT_BG) >= 4.5);
-        assertTrue(RiskColors.contrast(RiskColors.text(Risk.MEDIUM, false), LIGHT_BG) >= 4.5);
-        assertTrue(RiskColors.contrast(RiskColors.text(Risk.HIGH, true), DARK_BG) >= 4.5);
-        assertTrue(RiskColors.contrast(RiskColors.text(Risk.MEDIUM, true), DARK_BG) >= 4.5);
+    void riskColorsMeetContrastOnEveryRow() {
+        for (Risk r : List.of(Risk.HIGH, Risk.MEDIUM)) {
+            for (Color bg : LIGHT_ROWS) {
+                assertTrue(RiskColors.contrast(RiskColors.text(r, false), bg) >= 4.5, r + " on " + bg);
+            }
+            for (Color bg : DARK_ROWS) {
+                assertTrue(RiskColors.dark(bg));
+                assertTrue(RiskColors.contrast(RiskColors.text(r, true), bg) >= 4.5, r + " on " + bg);
+            }
+        }
     }
 
     @Test
     void colorsAreTheSpecOnes() {
         assertEquals(new Color(0xC62828), RiskColors.text(Risk.HIGH, false));
-        assertEquals(new Color(0xFF6B6B), RiskColors.text(Risk.HIGH, true));
-        assertEquals(new Color(0xB45309), RiskColors.text(Risk.MEDIUM, false));
+        assertEquals(new Color(0xFF7B7B), RiskColors.text(Risk.HIGH, true));
+        assertEquals(new Color(0xA84D08), RiskColors.text(Risk.MEDIUM, false));
         assertEquals(new Color(0xF59E0B), RiskColors.text(Risk.MEDIUM, true));
         assertNull(RiskColors.text(Risk.LOW, false));
         assertNull(RiskColors.text(Risk.NONE, true));

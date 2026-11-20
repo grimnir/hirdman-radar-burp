@@ -3,14 +3,14 @@ package pro.hirdman.radar.ui;
 import java.awt.Color;
 import pro.hirdman.radar.model.Risk;
 
-/** Risk text colours for both Burp themes, and the WCAG contrast check behind them. */
+/** Risk text colours for both Burp themes, striped rows included, and the WCAG contrast check behind them. */
 public final class RiskColors {
 
     static final double MIN_CONTRAST = 4.5;
 
     private static final Color HIGH_LIGHT = new Color(0xC62828);
-    private static final Color HIGH_DARK = new Color(0xFF6B6B);
-    private static final Color MEDIUM_LIGHT = new Color(0xB45309);
+    private static final Color HIGH_DARK = new Color(0xFF7B7B);
+    private static final Color MEDIUM_LIGHT = new Color(0xA84D08);
     private static final Color MEDIUM_DARK = new Color(0xF59E0B);
 
     private RiskColors() {

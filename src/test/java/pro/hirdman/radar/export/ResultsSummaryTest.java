@@ -36,10 +36,12 @@ class ResultsSummaryTest {
 
                 4 hosts, 2 with leaks, 1 failed. Hirdman Radar summary, 2026-11-17 (UTC).
 
-                | Host | Risk | Infostealer | Work | Personal | DB records | Latest breach |
+                | Host | Risk | Infostealer | Work | Host logins | DB records | Latest breach |
                 |---|---|---|---|---|---|---|
                 | vpn.example.com | High | 12 | 3 | 40 | 7 | 2024-03 |
                 | mail.example.com | Medium | 0 | 0 | 5 | 0 |  |
+
+                Host logins are credentials for a site on the host, whoever they belong to: for a public service, its users.
 
                 Counts only: no accounts, passwords, raw records or dumps. Partial check: about a third of a full \
                 HIRDMAN review. A full review shows which accounts and devices are affected and whether the passwords still \

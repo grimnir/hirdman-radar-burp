@@ -31,8 +31,9 @@ public final class HostView {
             }
             case CHECKED, CLEAN -> {
                 out.add(r.host() + ": " + verdict(r));
-                out.add("Infostealer logs: " + r.stealer() + ". Work records: " + r.work() + ". Personal records: " + r.personal()
-                        + ". Database records: " + r.dbRecords() + ".");
+                // Named as the table's columns.
+                out.add("Infostealer: " + r.stealer() + ". Work: " + r.work() + ". Host logins: " + r.personal()
+                        + ". DB records: " + r.dbRecords() + ".");
                 if (r.latestBreach() != null) {
                     out.add("Latest known breach: " + r.latestBreach() + ".");
                 }
