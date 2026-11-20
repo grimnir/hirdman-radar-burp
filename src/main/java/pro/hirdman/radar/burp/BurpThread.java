@@ -1,19 +1,18 @@
 package pro.hirdman.radar.burp;
 
+import java.time.Duration;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import pro.hirdman.radar.Threads;
 
 /** One background thread for calls into Burp (issues, site map), so job polling never waits on Burp. */
 public final class BurpThread implements Executor {
 
-    private final ExecutorService service = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "hirdman-radar-burp");
-        t.setDaemon(true);
-        return t;
-    });
+    private final ExecutorService service = Executors.newSingleThreadExecutor(Threads.daemon("hirdman-radar-burp"));
     private final Consumer<String> error;
 
     public BurpThread(Consumer<String> error) {
@@ -36,7 +35,16 @@ public final class BurpThread implements Executor {
         }
     }
 
-    public void close() {
+    /** Unload: tasks already queued (issues of rows just checked) get up to {@code wait} to finish, then are dropped. */
+    public void close(Duration wait) {
+        service.shutdown();
+        try {
+            if (service.awaitTermination(wait.toNanos(), TimeUnit.NANOSECONDS)) {
+                return;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         service.shutdownNow();
     }
 }
