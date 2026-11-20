@@ -15,7 +15,6 @@ import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -55,7 +54,6 @@ class JobQueueTest {
         queue = new JobQueue(runner(sleeper, radar), j -> changes.incrementAndGet(), (task, d) -> {
             pauses.add(d);
             task.run();
-            return CompletableFuture.completedFuture(null);
         }, () -> timerClosed.set(true));
         return queue;
     }
@@ -69,7 +67,6 @@ class JobQueueTest {
         queue = new JobQueue(runner((d, job) -> pauses.add(d), radar), j -> changes.incrementAndGet(), (task, d) -> {
             pauses.add(d);
             timed.add(task);
-            return new CompletableFuture<>();
         }, () -> timerClosed.set(true));
         return queue;
     }
@@ -429,7 +426,6 @@ class JobQueueTest {
             }
         }, (task, d) -> {
             timed.add(task);
-            return new CompletableFuture<>();
         }, () -> { });
         self.set(queue);
         Job j = queue.submit(JobKind.FIND_AND_CHECK, "a.com", List.of(), false);

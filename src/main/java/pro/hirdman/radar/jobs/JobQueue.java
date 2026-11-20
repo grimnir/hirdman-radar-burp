@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -25,7 +24,7 @@ public final class JobQueue {
     /** Runs a task after a delay; tests pass their own clock. */
     @FunctionalInterface
     interface Timer {
-        Future<?> schedule(Runnable task, Duration delay);
+        void schedule(Runnable task, Duration delay);
     }
 
     private final JobRunner runner;
