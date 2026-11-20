@@ -70,6 +70,8 @@ public final class JobRunner {
 
     public static final String OFF_FOR_PROJECT = "Private project: nothing was sent. The switch is at the bottom of the Hirdman Radar tab.";
     static final String OFF_MID_JOB = "Private project was ticked, so nothing more was sent.";
+    private static final String BAD_SERVER = "Server URL in Settings > Extensions > Hirdman Radar is not valid.";
+    static final String CRASHED = "Unexpected error. Details are in the extension's Errors tab.";
 
     private static final String FAILED = " failed: ";
 
@@ -83,7 +85,7 @@ public final class JobRunner {
     private static final Duration FAIL_DELETE_TIMEOUT = Duration.ofSeconds(5);
     /** How often a worker waiting for an answer looks at the cancel flag. */
     private static final Duration CANCEL_CHECK = Duration.ofMillis(100);
-    static final String UNEXPECTED = "Unexpected answer from the server";
+    static final String UNEXPECTED = RetryPolicy.MALFORMED;
     /** Limits against a server that floods the project: rows per job, the life of a server job, silent pages. */
     static final int MAX_ROWS = 1000;
     static final Duration MAX_SERVER_JOB = Duration.ofHours(2);
@@ -234,12 +236,12 @@ public final class JobRunner {
                 throw fail(c, OFF_FOR_PROJECT);
             }
             if (c.o.server() == null || c.o.serverProblem() != null) {
-                throw fail(c, "Server URL in Settings > Extensions > Hirdman Radar is not valid."
+                throw fail(c, BAD_SERVER
                         + (c.o.serverProblem() == null ? "" : " " + c.o.serverProblem()));
             }
             c.radar = radar.apply(c.o.server());
             if (c.radar == null) {
-                throw fail(c, "Server URL in Settings > Extensions > Hirdman Radar is not valid.");
+                throw fail(c, BAD_SERVER);
             }
             if (job.kind() == JobKind.CHECK_HOSTS) {
                 c.toCheck = job.force() ? job.hosts() : toSend(job.hosts());
@@ -273,8 +275,6 @@ public final class JobRunner {
             return List.of();
         }
     }
-
-    static final String CRASHED = "Unexpected error. Details are in the extension's Errors tab.";
 
     /** A run that threw: the trace goes to the Errors tab and the job fails. */
     void crashed(Job job, Throwable t) {

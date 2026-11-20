@@ -30,6 +30,9 @@ import pro.hirdman.radar.api.Transport;
  */
 public final class BurpTransport implements Transport {
 
+    /** Headers Burp itself sets on every request; the rest must be the plugin's own. */
+    private static final Set<String> BURP_HEADERS = Set.of("host", "content-length", "connection");
+
     private final Http http;
     private final Function<String, HttpRequest> fromUrl;
     private final Function<Duration, RequestOptions> options;
@@ -37,9 +40,6 @@ public final class BurpTransport implements Transport {
     private final BooleanSupplier off;
     private final Consumer<String> warn;
     private final AtomicBoolean warned = new AtomicBoolean();
-
-    /** Headers Burp itself sets on every request; the rest must be the plugin's own. */
-    private static final Set<String> BURP_HEADERS = Set.of("host", "content-length", "connection");
 
     /**
      * {@code off}: the project keeps everything in Burp, so nothing is sent, not even a job already running.

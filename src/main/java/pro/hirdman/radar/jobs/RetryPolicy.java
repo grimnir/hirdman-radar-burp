@@ -25,7 +25,7 @@ public final class RetryPolicy {
     static final Duration MAX_POLL_WAIT = Duration.ofSeconds(45);
     /** Tries of a poll whose answer could not be read; polling again with the same cursor loses nothing. */
     static final int MALFORMED_POLL_ATTEMPTS = 3;
-    private static final String MALFORMED = "Unexpected answer from the server";
+    static final String MALFORMED = "Unexpected answer from the server";
 
     private static final int[] BACKOFF_SECONDS = {2, 4, 8, 16, 30};
 
