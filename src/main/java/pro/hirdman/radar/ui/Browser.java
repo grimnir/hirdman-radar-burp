@@ -12,6 +12,11 @@ public final class Browser {
     }
 
     public static void open(String url, Consumer<String> error) {
+        open(url, "link", error);
+    }
+
+    /** {@code what} names the address in the line that says there is no browser. */
+    static void open(String url, String what, Consumer<String> error) {
         try {
             if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
                 Desktop.getDesktop().browse(URI.create(url));
@@ -21,6 +26,6 @@ public final class Browser {
             error.accept("Hirdman Radar: cannot open " + url + ": " + e);
             return;
         }
-        error.accept("Hirdman Radar: no browser to open here. The link is " + url);
+        error.accept("Hirdman Radar: no browser to open here. The " + what + " is " + url);
     }
 }
