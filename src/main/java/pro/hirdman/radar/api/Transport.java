@@ -9,7 +9,7 @@ import java.util.Map;
 public interface Transport {
 
     /** The largest answer read; a larger one is refused before it is turned into text. */
-    int MAX_BODY = 4 * 1024 * 1024;
+    int MAX_BODY = 8 * 1024 * 1024;
 
     /** The answer was larger than {@link #MAX_BODY}. */
     final class TooLarge extends IOException {

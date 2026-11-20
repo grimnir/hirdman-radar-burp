@@ -104,8 +104,9 @@ The search runs on the HIRDMAN server, and Burp gets the finished list.
   project, and a running job stops before its next request.
 - Because the plugin's requests go through Burp's HTTP stack, session handling
   rules whose tool scope includes *Extensions* apply to them, and so do platform
-  authentication entries for all hosts. If such rules add credentials, exclude
-  the server host from them.
+  authentication entries for all hosts. If such rules add cookies, tokens or
+  other credentials, the plugin stops the job and asks you to exclude the server
+  host from them. Other added headers are noted in the extension's output.
 
 If the server answers about hosts the job did not ask about, the plugin ignores
 those answers.

@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import pro.hirdman.radar.api.Reply;
 import pro.hirdman.radar.api.Transport;
 
@@ -33,17 +34,22 @@ public final class BurpTransport implements Transport {
     /** Headers Burp itself sets on every request; the rest must be the plugin's own. */
     private static final Set<String> BURP_HEADERS = Set.of("host", "content-length", "connection");
 
+    /** Header names that carry a login, a session or a key. */
+    private static final Pattern CREDENTIAL =
+            Pattern.compile("cookie|authorization|auth|token|session|key|secret|csrf|xsrf|password|jwt|bearer");
+
     private final Http http;
     private final Function<String, HttpRequest> fromUrl;
     private final Function<Duration, RequestOptions> options;
     private final BooleanSupplier verifyTls;
     private final BooleanSupplier off;
     private final Consumer<String> warn;
-    private final AtomicBoolean warned = new AtomicBoolean();
+    private final AtomicBoolean warnedCredentials = new AtomicBoolean();
+    private final AtomicBoolean warnedOther = new AtomicBoolean();
 
     /**
      * {@code off}: the project keeps everything in Burp, so nothing is sent, not even a job already running.
-     * {@code warn} gets one note when Burp adds headers to the plugin's requests.
+     * {@code warn} gets one note when Burp adds credentials, and one when it adds other headers, to the plugin's requests.
      */
     public BurpTransport(Http http, BooleanSupplier verifyTls, BooleanSupplier off, Consumer<String> warn) {
         this(http, HttpRequest::httpRequestFromUrl, BurpTransport::options, verifyTls, off, warn);
@@ -101,7 +107,8 @@ public final class BurpTransport implements Transport {
 
     /**
      * Burp's session handling rules and other extensions can add the target's cookies or tokens to any request it
-     * sends. Such a request is reported and its answer dropped, so the job stops instead of sending them again.
+     * sends. A request carrying such credentials is reported and its answer dropped, so the job stops instead of
+     * sending them again. Other added headers, such as a bug bounty marker, are noted once and the request goes on.
      */
     private void checkSentHeaders(HttpRequest sent, Map<String, String> own) throws Altered {
         if (sent == null) {
@@ -109,23 +116,29 @@ public final class BurpTransport implements Transport {
         }
         Set<String> expected = new HashSet<>(BURP_HEADERS);
         own.keySet().forEach(k -> expected.add(k.toLowerCase(Locale.ROOT)));
-        List<String> added = new ArrayList<>();
+        List<String> credentials = new ArrayList<>();
+        List<String> other = new ArrayList<>();
         for (HttpHeader h : sent.headers()) {
             String name = h.name();
+            String lower = name.toLowerCase(Locale.ROOT);
             // HTTP/2 pseudo-headers carry the method, path and host.
-            if (!name.startsWith(":") && !expected.contains(name.toLowerCase(Locale.ROOT)) && !added.contains(name)) {
-                added.add(name);
+            if (name.startsWith(":") || expected.contains(lower) || credentials.contains(name) || other.contains(name)) {
+                continue;
             }
+            (CREDENTIAL.matcher(lower).find() ? credentials : other).add(name);
         }
-        if (added.isEmpty()) {
-            return;
+        if (!credentials.isEmpty()) {
+            String message = "Burp added credentials to the radar request (" + String.join(", ", credentials)
+                    + "). Exclude the radar server from session handling rules.";
+            if (warnedCredentials.compareAndSet(false, true)) {
+                warn.accept("Hirdman Radar: " + message);
+            }
+            throw new Altered(message);
         }
-        String message = "Burp added headers to the radar request (" + String.join(", ", added)
-                + "). Exclude the radar server from session handling rules.";
-        if (warned.compareAndSet(false, true)) {
-            warn.accept("Hirdman Radar: " + message);
+        if (!other.isEmpty() && warnedOther.compareAndSet(false, true)) {
+            warn.accept("Hirdman Radar: Burp added headers to the radar request (" + String.join(", ", other)
+                    + "). They are sent to the radar server too.");
         }
-        throw new Altered(message);
     }
 
     private static RequestOptions options(Duration timeout) {

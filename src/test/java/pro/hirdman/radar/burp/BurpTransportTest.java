@@ -181,14 +181,14 @@ class BurpTransportTest {
     }
 
     @Test
-    void headersBurpAddedStopTheRequestAndAreLoggedOnce() {
+    void credentialHeadersBurpAddedStopTheRequestAndAreLoggedOnce() {
         // A session handling rule for every URL would send the client's token to the radar server.
         List<HttpHeader> sent = new ArrayList<>(SENT_AS_ASKED);
         sent.add(header("cookie", "session=abc"));
         sent.add(header("X-Forwarded-For", "10.0.0.1"));
         sent.add(header("Authorization", "Bearer t"));
         answer.set(response(200, List.of(), "{}", sent));
-        String expected = "Burp added headers to the radar request (cookie, X-Forwarded-For, Authorization)."
+        String expected = "Burp added credentials to the radar request (cookie, Authorization)."
                 + " Exclude the radar server from session handling rules.";
         Transport.Altered e = assertThrows(Transport.Altered.class,
                 () -> transport.send("GET", JOBS, ownHeaders(), null, Duration.ofSeconds(5)));
@@ -198,13 +198,28 @@ class BurpTransportTest {
     }
 
     @Test
-    void anApiKeyOrEncodingTheRadarDidNotSetIsAnAddedHeader() {
-        answer.set(response(200, List.of(), "{}", List.of(header("Host", "scan.hirdman.pro"), header("X-API-Key", "k"),
-                header("Accept-Encoding", "gzip"))));
-        Transport.Altered e = assertThrows(Transport.Altered.class,
-                () -> transport.send("GET", JOBS, Map.of(), null, Duration.ofSeconds(5)));
-        assertTrue(e.getMessage().startsWith("Burp added headers to the radar request (X-API-Key, Accept-Encoding)."),
-                e.getMessage());
+    void tokenLikeHeaderNamesCountAsCredentials() {
+        for (String name : List.of("X-API-Key", "X-Auth-Token", "X-CSRF-Token", "X-Session-Id", "Proxy-Authorization",
+                "X-Client-Secret")) {
+            answer.set(response(200, List.of(), "{}", List.of(header("Host", "scan.hirdman.pro"), header(name, "v"))));
+            Transport.Altered e = assertThrows(Transport.Altered.class,
+                    () -> transport.send("GET", JOBS, Map.of(), null, Duration.ofSeconds(5)), name);
+            assertTrue(e.getMessage().startsWith("Burp added credentials to the radar request (" + name + ")."),
+                    e.getMessage());
+        }
+    }
+
+    @Test
+    void otherAddedHeadersAreLoggedOnceAndTheRequestGoesOn() throws IOException {
+        // Bug bounty programmes often ask for a marker header on all traffic; that must not stop the plugin.
+        List<HttpHeader> sent = new ArrayList<>(SENT_AS_ASKED);
+        sent.add(header("X-HackerOne-Research", "someone"));
+        sent.add(header("Accept-Encoding", "gzip"));
+        answer.set(response(202, List.of(), "{\"job_id\":\"j1\"}", sent));
+        assertEquals(202, transport.send("POST", JOBS, ownHeaders(), "{}", Duration.ofSeconds(30)).status());
+        assertEquals(202, transport.send("POST", JOBS, ownHeaders(), "{}", Duration.ofSeconds(30)).status());
+        assertEquals(List.of("Hirdman Radar: Burp added headers to the radar request (X-HackerOne-Research,"
+                + " Accept-Encoding). They are sent to the radar server too."), warnings);
     }
 
     @Test

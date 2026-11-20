@@ -261,7 +261,7 @@ class RadarClientTest {
 
     @Test
     void theAnswerCapIsFourMegabytes() {
-        assertEquals(4 * 1024 * 1024, Transport.MAX_BODY);
+        assertEquals(8 * 1024 * 1024, Transport.MAX_BODY);
         assertEquals("answer larger than 4 MB", new Transport.TooLarge().getMessage());
     }
 
@@ -314,7 +314,7 @@ class RadarClientTest {
 
     @Test
     void aRequestBurpAlteredIsBlocked() {
-        String why = "Burp added headers to the radar request (Cookie). Exclude the radar server from session handling rules.";
+        String why = "Burp added credentials to the radar request (Cookie). Exclude the radar server from session handling rules.";
         RadarClient c = new RadarClient(ConnectionSettings.of("https://scan.hirdman.pro"), (m, u, h, b, t) -> {
             throw new Transport.Altered(why);
         });

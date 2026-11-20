@@ -171,8 +171,8 @@ class RetryPolicyTest {
     @Test
     void aBlockedRequestFailsWithItsReasonEvenOnAPoll() {
         // Sending again would send the added headers again.
-        ApiException e = ApiException.blocked("Burp added headers to the radar request (Cookie).");
-        assertEquals(new Fail("Burp added headers to the radar request (Cookie)."), decide(e, 0));
-        assertEquals(new Fail("Burp added headers to the radar request (Cookie)."), decidePoll(e, 0, 5));
+        ApiException e = ApiException.blocked("Burp added credentials to the radar request (Cookie).");
+        assertEquals(new Fail("Burp added credentials to the radar request (Cookie)."), decide(e, 0));
+        assertEquals(new Fail("Burp added credentials to the radar request (Cookie)."), decidePoll(e, 0, 5));
     }
 }
