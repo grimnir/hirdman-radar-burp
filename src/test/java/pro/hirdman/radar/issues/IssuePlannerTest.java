@@ -50,17 +50,34 @@ class IssuePlannerTest {
         assertEquals(new IssueSpec(P + LOGIN,
                 "<p>Burp traffic shows what looks like a login page on this host: <b>FortiGate SSL VPN</b> at "
                         + "<b>/remote/&lt;b&gt;login</b>. The leak archive has records for this host: 3 in infostealer logs, "
-                        + "2 work accounts, 0 personal accounts, 0 database records.</p>"
+                        + "2 with work email addresses.</p>"
                         + "<p>Leaked passwords are often tried on login pages like this one. Hirdman Radar counts records only and "
                         + "did not check whether any password works here.</p>" + CHECKED,
-                "<p>Check that this login asks for a second factor and is open only to those who need it. A full HIRDMAN review "
-                        + "shows which accounts the records belong to and whether their passwords still work.</p>",
+                "<p>Check that this login asks for a second factor and is open only to those who need it.</p>",
                 "https://vpn.example.com/", "low", "tentative", ""), specs.get(1));
         assertEquals(1, IssuePlanner.plan(r, true, new IssueOptions(true, false, Risk.MEDIUM, null), Set.of()).size());
         assertEquals(1, IssuePlanner.plan(r, true, DEFAULTS, Set.of(IssueSpec.key(P + LOGIN, "https://vpn.example.com/"))).size());
         assertEquals(List.of(P + LOGIN), plan(row(HostStatus.CHECKED, f(STEALER, "low")).withLogin(page)).stream()
                 .map(IssueSpec::name).filter(n -> n.endsWith(LOGIN)).toList());
         assertTrue(plan(row(HostStatus.CLEAN).withLogin(page)).isEmpty());
+    }
+
+    @Test
+    void theLoginIssueCountsRecordsAndSkipsZeros() {
+        LoginPage page = new LoginPage(LoginPage.Kind.PASSWORD_FORM, "Password form", "/login");
+        HostResult all = new HostResult("vpn.example.com", "example.com", HostStatus.CHECKED, 5, 3, 2, 4, List.of(f(STEALER, "high")),
+                null).withLogin(page);
+        assertTrue(plan(all).get(1).detail().contains("records for this host: 5 in infostealer logs, 3 with work email addresses, "
+                + "2 with credentials for the host, 4 in breached databases.</p>"), plan(all).get(1).detail());
+        HostResult some = new HostResult("vpn.example.com", "example.com", HostStatus.CHECKED, 0, 1, 1, 0, List.of(f(STEALER, "high")),
+                null).withLogin(page);
+        assertTrue(plan(some).get(1).detail().contains("records for this host: 1 with a work email address, "
+                + "1 with credentials for the host.</p>"), plan(some).get(1).detail());
+        HostResult none = new HostResult("vpn.example.com", "example.com", HostStatus.CHECKED, 0, 0, 0, 0, List.of(f(STEALER, "high")),
+                null).withLogin(page);
+        assertEquals("<p>Burp traffic shows what looks like a login page on this host: <b>Password form</b> at <b>/login</b>.</p>"
+                + "<p>Leaked passwords are often tried on login pages like this one. Hirdman Radar counts records only and "
+                + "did not check whether any password works here.</p>", plan(none).get(1).detail());
     }
 
     @Test

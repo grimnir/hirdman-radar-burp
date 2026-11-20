@@ -1,7 +1,5 @@
 package pro.hirdman.radar.issues;
 
-import static pro.hirdman.radar.jobs.StatusText.count;
-
 import java.net.URI;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -44,8 +42,7 @@ public final class IssuePlanner {
     static final String PREFIX = "Hirdman Radar: ";
     static final String LOGIN = "Login page on a host with leaked records";
     private static final String LOGIN_REMEDIATION = "<p>Check that this login asks for a second factor and is open only to those"
-            + " who need it. A full HIRDMAN review shows which accounts the records belong to and whether their passwords still"
-            + " work.</p>";
+            + " who need it.</p>";
 
     public static String baseUrl(String host) {
         return "https://" + host + "/";
@@ -89,10 +86,24 @@ public final class IssuePlanner {
 
     /** Cautious on purpose: the page only looks like a login, and nobody checked whether a leaked password works. */
     private static String loginDetail(HostResult r, LoginPage login) {
+        // Records, not accounts: one account can appear in several records.
+        List<String> parts = new ArrayList<>();
+        if (r.stealer() > 0) {
+            parts.add(r.stealer() + " in infostealer logs");
+        }
+        if (r.work() > 0) {
+            parts.add(r.work() == 1 ? "1 with a work email address" : r.work() + " with work email addresses");
+        }
+        if (r.personal() > 0) {
+            parts.add(r.personal() + " with credentials for the host");
+        }
+        if (r.dbRecords() > 0) {
+            parts.add(r.dbRecords() + " in breached databases");
+        }
         return "<p>Burp traffic shows what looks like a login page on this host: <b>" + IssueHtml.text(login.label()) + "</b> at <b>"
-                + IssueHtml.text(login.path()) + "</b>. The leak archive has records for this host: " + r.stealer()
-                + " in infostealer logs, " + count(r.work(), "work account") + ", " + count(r.personal(), "personal account") + ", "
-                + count(r.dbRecords(), "database record") + ".</p><p>Leaked passwords are often tried on login pages like this one."
+                + IssueHtml.text(login.path()) + "</b>."
+                + (parts.isEmpty() ? "" : " The leak archive has records for this host: " + String.join(", ", parts) + ".")
+                + "</p><p>Leaked passwords are often tried on login pages like this one."
                 + " Hirdman Radar counts records only and did not check whether any password works here.</p>";
     }
 
