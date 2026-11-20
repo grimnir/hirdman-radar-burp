@@ -16,6 +16,7 @@ import pro.hirdman.radar.burp.BurpThread;
 import pro.hirdman.radar.burp.BurpTransport;
 import pro.hirdman.radar.burp.LoginWatch;
 import pro.hirdman.radar.burp.ProjectStore;
+import pro.hirdman.radar.burp.ProxyHighlight;
 import pro.hirdman.radar.burp.RadarEditor;
 import pro.hirdman.radar.burp.RadarMenu;
 import pro.hirdman.radar.burp.RadarSettings;
@@ -111,6 +112,7 @@ public final class HirdmanRadar implements BurpExtension {
         });
         TrafficWatcher traffic = new TrafficWatcher(batcher, settings::watchTraffic, queue, log::logToError, new LoginWatch(store));
         api.http().registerHttpHandler(traffic);
+        api.proxy().registerResponseHandler(new ProxyHighlight(store, settings::highlightProxy, log::logToError));
         traffic.start();
         project.start();
 
