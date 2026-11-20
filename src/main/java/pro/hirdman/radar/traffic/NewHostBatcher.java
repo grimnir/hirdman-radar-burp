@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.model.HostNames;
 
 /**
@@ -29,7 +30,7 @@ public final class NewHostBatcher {
     private final Supplier<String> serverHost;
     private final Set<String> pending = new LinkedHashSet<>();
     private final Map<String, Instant> batched = new HashMap<>();
-    private Instant lastDrain;
+    private @Nullable Instant lastDrain;
 
     /** {@code serverHost} is the radar server's host name, read at each drain so a new Server URL counts at once. */
     public NewHostBatcher(Duration every, Duration skipCheckedWithin, Function<String, Optional<Instant>> lastChecked,

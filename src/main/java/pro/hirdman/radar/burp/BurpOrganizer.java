@@ -15,9 +15,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.jobs.StatusText;
 import pro.hirdman.radar.model.HostResult;
 import pro.hirdman.radar.model.LoginPage;
@@ -69,7 +71,8 @@ public final class BurpOrganizer {
         for (Map.Entry<String, HostResult> e : byHost.entrySet()) {
             HttpRequestResponse item = found.get(e.getKey());
             if (item == null) {
-                missing.add(e.getValue().host() + e.getValue().login().path());
+                // byHost holds only rows with a login page.
+                missing.add(e.getValue().host() + Objects.requireNonNull(e.getValue().login()).path());
                 continue;
             }
             // A note the user left on the item stays in front of the radar's.
@@ -98,7 +101,7 @@ public final class BurpOrganizer {
                 String host = key(row);
                 // An HTML page beats a script or an image under the same path.
                 HttpRequestResponse had = found.get(host);
-                if (had == null || !html(had.response()) && html(item.response())) {
+                if (had == null || (!html(had.response()) && html(item.response()))) {
                     found.put(host, item);
                 }
             }
@@ -107,6 +110,8 @@ public final class BurpOrganizer {
     }
 
     /** One proxy history walk; the newest item that shows the login page wins. */
+    // The filter collects the items itself and keeps none, so the returned list is empty.
+    @SuppressWarnings("ReturnValueIgnored")
     private Map<String, HttpRequestResponse> fromHistory(Map<String, HostResult> byHost) {
         Map<String, ProxyHttpRequestResponse> newest = new HashMap<>();
         history.apply(p -> {
@@ -127,7 +132,7 @@ public final class BurpOrganizer {
     }
 
     /** The selected row whose host the URL is on, under its login path, or null. Only the URL string is read. */
-    private static HostResult hostOf(String url, Map<String, HostResult> byHost) {
+    private static @Nullable HostResult hostOf(@Nullable String url, Map<String, HostResult> byHost) {
         if (url == null) {
             return null;
         }
@@ -140,7 +145,10 @@ public final class BurpOrganizer {
     }
 
     /** "/owa/" also takes "/owa"; "/" takes every path. Case is ignored, as when the page was noted. */
-    private static boolean startsWith(String path, LoginPage login) {
+    private static boolean startsWith(@Nullable String path, @Nullable LoginPage login) {
+        if (login == null) {
+            return false;
+        }
         String prefix = login.path();
         if (prefix.endsWith("/")) {
             prefix = prefix.substring(0, prefix.length() - 1);
@@ -149,8 +157,8 @@ public final class BurpOrganizer {
     }
 
     /** The response shows the same login page the plugin noted from traffic. */
-    private static boolean shows(HttpRequest request, HttpResponse response, LoginPage login) {
-        if (request == null || response == null) {
+    private static boolean shows(@Nullable HttpRequest request, @Nullable HttpResponse response, @Nullable LoginPage login) {
+        if (request == null || response == null || login == null) {
             return false;
         }
         int status = response.statusCode();
@@ -158,7 +166,7 @@ public final class BurpOrganizer {
                 () -> html(response) && LoginWatch.passwordField(response)).filter(login::equals).isPresent();
     }
 
-    private static boolean html(HttpResponse response) {
+    private static boolean html(@Nullable HttpResponse response) {
         return response != null && response.mimeType() == MimeType.HTML;
     }
 

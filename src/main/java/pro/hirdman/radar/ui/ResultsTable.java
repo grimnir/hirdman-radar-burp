@@ -23,6 +23,7 @@ import javax.swing.table.JTableHeader;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableRowSorter;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.model.HostResult;
 import pro.hirdman.radar.model.Risk;
 
@@ -165,7 +166,7 @@ public final class ResultsTable extends JTable {
     protected JTableHeader createDefaultTableHeader() {
         return new JTableHeader(columnModel) {
             @Override
-            public String getToolTipText(MouseEvent e) {
+            public @Nullable String getToolTipText(MouseEvent e) {
                 int column = columnAtPoint(e.getPoint());
                 return column < 0 ? null : HEADER_TIPS.get(convertColumnIndexToModel(column));
             }
@@ -174,7 +175,7 @@ public final class ResultsTable extends JTable {
 
     /** Change shows the previous counts, Latest breach the breach sources, Status the time of the check. */
     @Override
-    public String getToolTipText(MouseEvent e) {
+    public @Nullable String getToolTipText(MouseEvent e) {
         int row = rowAtPoint(e.getPoint());
         int column = columnAtPoint(e.getPoint());
         if (row < 0 || column < 0) {

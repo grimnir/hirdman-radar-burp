@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.jobs.Job;
 import pro.hirdman.radar.jobs.JobKind;
 import pro.hirdman.radar.jobs.JobQueue;
@@ -72,7 +73,7 @@ public final class JobsPanel extends JPanel {
         final JLabel label = plain(new JLabel());
         final JLabel status = plain(new JLabel());
         final JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-        JobState shownState;
+        @Nullable JobState shownState;
 
         Row(Job job) {
             this.job = job;
@@ -122,7 +123,7 @@ public final class JobsPanel extends JPanel {
     }
 
     /** The first 20 hosts of a host check; null for a domain job, whose label is the domain. */
-    private static String hostsTip(Job job) {
+    private static @Nullable String hostsTip(Job job) {
         if (job.kind() != JobKind.CHECK_HOSTS) {
             return null;
         }

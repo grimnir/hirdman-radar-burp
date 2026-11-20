@@ -19,6 +19,7 @@ import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.jobs.Job;
 import pro.hirdman.radar.jobs.JobKind;
 import pro.hirdman.radar.jobs.JobQueue;
@@ -46,8 +47,8 @@ public final class TrafficWatcher implements HttpHandler {
     private final Consumer<HttpResponseReceived> responses;
     private final Function<HttpRequestToBeSent, RequestToBeSentAction> passRequest;
     private final Function<HttpResponseReceived, ResponseReceivedAction> passResponse;
-    private ScheduledExecutorService timer;
-    private volatile Job last;
+    private @Nullable ScheduledExecutorService timer;
+    private volatile @Nullable Job last;
 
     /**
      * {@code enabled} is read at most once a second on the request path and at every drain. {@code responses} gets every
@@ -118,13 +119,16 @@ public final class TrafficWatcher implements HttpHandler {
         return passResponse.apply(response);
     }
 
+    // drainSafely logs its own failures; the future is never read.
+    @SuppressWarnings("FutureReturnValueIgnored")
     public synchronized void start() {
         if (timer == null) {
-            timer = Executors.newSingleThreadScheduledExecutor(r -> {
+            ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "hirdman-radar-traffic");
                 t.setDaemon(true);
                 return t;
             });
+            this.timer = timer;
             timer.scheduleAtFixedRate(() -> drainSafely(Instant.now()), PERIOD_SECONDS, PERIOD_SECONDS, TimeUnit.SECONDS);
         }
     }

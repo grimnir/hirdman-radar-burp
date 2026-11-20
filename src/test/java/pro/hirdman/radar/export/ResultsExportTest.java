@@ -111,7 +111,7 @@ class ResultsExportTest {
     void csvQuotesCellsAndDefusesFormulas() {
         HostResult odd = new HostResult("a.example.com", "example.com", HostStatus.CHECKED, 1, 0, 0, 0,
                 List.of(f("=HYPERLINK(\"http://x\",\"y\")", "low")), AT);
-        String line = ResultsExport.csv(List.of(odd), h -> false).split("\n")[1];
+        String line = ResultsExport.csv(List.of(odd), h -> false).lines().toList().get(1);
         assertTrue(line.endsWith(",\"'=HYPERLINK(\"\"http://x\"\",\"\"y\"\") (low)\",,"), line);
         assertEquals("", ResultsExport.cell(""));
         assertEquals("'+1", ResultsExport.cell("+1"));
@@ -134,10 +134,10 @@ class ResultsExportTest {
         HostResult again = leaky.withPrevious(new HostResult.Previous(2, 3, 1, 41, AT.minusSeconds(3600)));
         HostResult first = leaky.withPrevious(HostResult.Previous.FIRST);
         String csv = ResultsExport.csv(List.of(again, first, unknown), h -> true);
-        String[] lines = csv.split("\n");
-        assertTrue(lines[1].endsWith(",\"Infostealer +10, DB records -1\""), lines[1]);
-        assertTrue(lines[2].endsWith(",new"), lines[2]);
-        assertTrue(lines[3].endsWith(","), lines[3]);
+        List<String> lines = csv.lines().toList();
+        assertTrue(lines.get(1).endsWith(",\"Infostealer +10, DB records -1\""), lines.get(1));
+        assertTrue(lines.get(2).endsWith(",new"), lines.get(2));
+        assertTrue(lines.get(3).endsWith(","), lines.get(3));
 
         JsonArray hosts = JsonParser.parseString(ResultsExport.json("example.com", List.of(again, first, unknown), h -> true, null,
                 "0.1.0", AT)).getAsJsonObject().getAsJsonArray("hosts");

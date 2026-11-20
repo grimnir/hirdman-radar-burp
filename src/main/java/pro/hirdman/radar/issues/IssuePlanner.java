@@ -7,10 +7,12 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.ServerEvent.Finding;
 import pro.hirdman.radar.model.HostNames;
 import pro.hirdman.radar.model.HostResult;
@@ -50,7 +52,7 @@ public final class IssuePlanner {
 
     /** Issues for a checked host, one per finding, minus filtered ones and those already in {@code alreadyReported}. */
     public static List<IssueSpec> plan(HostResult r, boolean inScope, IssueOptions o, Set<String> alreadyReported) {
-        if (r.status() != HostStatus.CHECKED || !inScope && !o.includeOutOfScope()) {
+        if (r.status() != HostStatus.CHECKED || (!inScope && !o.includeOutOfScope())) {
             return List.of();
         }
         String baseUrl = baseUrl(r.host());
@@ -108,7 +110,7 @@ public final class IssuePlanner {
     }
 
     /** The domain's page on the radar site: the site shows the latest scan from its cache, or runs one. */
-    public static Optional<String> siteUrl(String domain, String site) {
+    public static Optional<String> siteUrl(@Nullable String domain, @Nullable String site) {
         Optional<String> d = domain == null ? Optional.empty() : HostNames.normalize(domain);
         if (site == null || !SITE.matcher(site).matches() || d.isEmpty()) {
             return Optional.empty();
@@ -117,7 +119,7 @@ public final class IssuePlanner {
     }
 
     /** The host of a site that passes {@link #siteUrl}, or null. */
-    static String siteHost(String site) {
+    static @Nullable String siteHost(@Nullable String site) {
         if (site == null || !SITE.matcher(site).matches()) {
             return null;
         }
@@ -128,15 +130,16 @@ public final class IssuePlanner {
         }
     }
 
-    /** The breaches the host's records come from, as plain text; empty without sources. */
+    /** The breaches the host's records come from, as plain text; empty without sources. HostResult keeps named ones only. */
     static String sourcesLine(HostResult r) {
         return r.sources().isEmpty() ? "" : "<p>Breach sources for this host: " + r.sources().stream()
-                .map(s -> IssueHtml.text(s.name()) + ": " + s.count() + (s.date() == null ? "" : " (" + s.date() + ")"))
+                .map(s -> IssueHtml.text(Objects.requireNonNull(s.name())) + ": " + s.count()
+                        + (s.date() == null ? "" : " (" + s.date() + ")"))
                 .collect(Collectors.joining("; ")) + ".</p>";
     }
 
     /** The plugin's line after the server detail: when the host was checked and the domain's page on the site. */
-    static String checkedLine(HostResult r, String site) {
+    static String checkedLine(HostResult r, @Nullable String site) {
         List<String> parts = new ArrayList<>();
         if (r.checkedAt() != null) {
             parts.add("Checked by Hirdman Radar on " + DAY.format(r.checkedAt()) + " (UTC).");
@@ -147,7 +150,7 @@ public final class IssuePlanner {
     }
 
     /** The server's one line on a full review, after the link to the scan; nothing without the link or the line. */
-    static String reviewLine(HostResult r, Finding f, String site) {
+    static String reviewLine(HostResult r, Finding f, @Nullable String site) {
         if (f.review() == null || f.review().isEmpty() || siteUrl(r.domain(), site).isEmpty()) {
             return "";
         }

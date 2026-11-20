@@ -100,7 +100,8 @@ final class FakeRadar implements Radar {
         started.add(request);
         String fallback;
         synchronized (this) {
-            fallback = "j" + (++jobIds);
+            jobIds++;
+            fallback = "j" + jobIds;
         }
         return (String) answer(starts, fallback);
     }

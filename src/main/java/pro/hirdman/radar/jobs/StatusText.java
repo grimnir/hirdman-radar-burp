@@ -1,6 +1,7 @@
 package pro.hirdman.radar.jobs;
 
 import java.time.Duration;
+import org.jspecify.annotations.Nullable;
 
 /** Every status line of the Jobs strip. */
 public final class StatusText {
@@ -114,7 +115,7 @@ public final class StatusText {
         return "The radar server is not taking checks right now. Try again later.";
     }
 
-    public static String failed(String reason) {
+    public static String failed(@Nullable String reason) {
         return "Failed: " + reason;
     }
 

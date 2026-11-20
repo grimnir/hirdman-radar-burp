@@ -194,9 +194,11 @@ class ResultsTableTest {
         show();
         table.getRowSorter().setSortKeys(List.of(new RowSorter.SortKey(ResultsTableModel.HOST, SortOrder.DESCENDING)));
         table.setRowSelectionInterval(0, 1);
-        assertEquals("Host,Risk,Scope,Infostealer,Work,Host logins,DB records,Change,Latest breach,Login page,Status\n"
-                + "b.example.com,,in,0,0,0,0,,,,Checked (nothing found)\na.example.com,,in,0,0,0,0,,,,Checked (nothing found)\n",
-                model.csv(table.selectedModelRows()));
+        assertEquals("""
+                Host,Risk,Scope,Infostealer,Work,Host logins,DB records,Change,Latest breach,Login page,Status
+                b.example.com,,in,0,0,0,0,,,,Checked (nothing found)
+                a.example.com,,in,0,0,0,0,,,,Checked (nothing found)
+                """, model.csv(table.selectedModelRows()));
     }
 
     @Test

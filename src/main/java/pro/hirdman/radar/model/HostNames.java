@@ -5,6 +5,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
 
 /** Host name rules, the same as the server's: anything else never reaches the table, site map or issues. */
 public final class HostNames {
@@ -19,7 +20,7 @@ public final class HostNames {
     }
 
     /** The name in what was typed or pasted: a URL, user@host, host:port or *.name; empty when there is none. */
-    public static Optional<String> domainInput(String raw) {
+    public static Optional<String> domainInput(@Nullable String raw) {
         if (raw == null) {
             return Optional.empty();
         }
@@ -49,7 +50,7 @@ public final class HostNames {
     }
 
     /** Lower-cased name without the trailing dot, or empty for IPs and anything that is not a DNS name. */
-    public static Optional<String> normalize(String raw) {
+    public static Optional<String> normalize(@Nullable String raw) {
         if (raw == null) {
             return Optional.empty();
         }

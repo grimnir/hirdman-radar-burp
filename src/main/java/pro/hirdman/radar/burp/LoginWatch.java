@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.model.HostResult;
 import pro.hirdman.radar.model.LoginPage;
 import pro.hirdman.radar.model.ResultStore;
@@ -84,7 +85,7 @@ public final class LoginWatch implements Consumer<HttpResponseReceived> {
         return from < to && message.indexOf("password", false, from, to) >= 0 && message.indexOf(PASSWORD_FIELD, from, to) >= 0;
     }
 
-    private static boolean tooBig(String contentLength) {
+    private static boolean tooBig(@Nullable String contentLength) {
         try {
             return contentLength != null && Long.parseLong(contentLength.strip()) > MAX_BODY;
         } catch (NumberFormatException e) {

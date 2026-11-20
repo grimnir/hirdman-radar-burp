@@ -5,6 +5,7 @@ import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /** A failed call to the radar server: no answer, an HTTP error status, or an unreadable answer. */
 public final class ApiException extends Exception {
@@ -18,16 +19,17 @@ public final class ApiException extends Exception {
 
     private final Kind kind;
     private final int status;
-    private final Duration retryAfter;
-    private final String serverMessage;
+    private final @Nullable Duration retryAfter;
+    private final @Nullable String serverMessage;
     private final boolean blocked;
 
-    private ApiException(Kind kind, int status, Duration retryAfter, String serverMessage, String message, Throwable cause) {
+    private ApiException(Kind kind, int status, @Nullable Duration retryAfter, @Nullable String serverMessage,
+            @Nullable String message, @Nullable Throwable cause) {
         this(kind, status, retryAfter, serverMessage, message, cause, false);
     }
 
-    private ApiException(Kind kind, int status, Duration retryAfter, String serverMessage, String message, Throwable cause,
-            boolean blocked) {
+    private ApiException(Kind kind, int status, @Nullable Duration retryAfter, @Nullable String serverMessage,
+            @Nullable String message, @Nullable Throwable cause, boolean blocked) {
         super(message, cause);
         this.kind = kind;
         this.status = status;
@@ -46,12 +48,12 @@ public final class ApiException extends Exception {
                 "HTTP " + r.status() + (msg == null ? "" : ": " + msg), null);
     }
 
-    public static ApiException malformed(String why, Throwable cause) {
+    public static ApiException malformed(@Nullable String why, @Nullable Throwable cause) {
         return new ApiException(Kind.MALFORMED, 0, null, null, Json.oneLine("Unexpected answer: " + why), cause);
     }
 
     /** The plugin stopped the request itself; sending it again would not help. Counts as an unusable answer. */
-    public static ApiException blocked(String reason) {
+    public static ApiException blocked(@Nullable String reason) {
         return new ApiException(Kind.MALFORMED, 0, null, null, reason, null, true);
     }
 
@@ -73,11 +75,11 @@ public final class ApiException extends Exception {
     }
 
     /** The server's {@code error} text, one line, or null. */
-    public String serverMessage() {
+    public @Nullable String serverMessage() {
         return serverMessage;
     }
 
-    private static Duration retryAfter(Reply r) {
+    private static @Nullable Duration retryAfter(Reply r) {
         return r.header("Retry-After")
                 .map(String::trim)
                 .filter(v -> v.matches("\\d{1,9}"))
@@ -85,14 +87,14 @@ public final class ApiException extends Exception {
                 .orElse(null);
     }
 
-    private static String errorText(String body) {
+    private static @Nullable String errorText(String body) {
         if (body.isEmpty() || body.length() > MAX_ERROR_BODY) {
             return null;
         }
         try {
             JsonElement e = JsonParser.parseString(body);
-            if (e.isJsonObject() && e.getAsJsonObject().get("error") instanceof JsonElement err
-                    && err.isJsonPrimitive() && err.getAsJsonPrimitive().isString()) {
+            JsonElement err = e.isJsonObject() ? e.getAsJsonObject().get("error") : null;
+            if (err != null && err.isJsonPrimitive() && err.getAsJsonPrimitive().isString()) {
                 return Json.oneLine(err.getAsString());
             }
         } catch (RuntimeException ex) {

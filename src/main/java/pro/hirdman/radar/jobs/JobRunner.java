@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
@@ -29,6 +30,7 @@ import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.Threads;
 import pro.hirdman.radar.Version;
 import pro.hirdman.radar.api.ApiException;
@@ -53,10 +55,11 @@ import pro.hirdman.radar.model.ResultStore;
 public final class JobRunner {
 
     /** {@code serverProblem} is set (and {@code server} may be null) when the Server URL setting is invalid. */
-    public record RunOptions(URI server, String serverProblem, boolean alwaysRescan, int maxAttempts,
+    public record RunOptions(@Nullable URI server, @Nullable String serverProblem, boolean alwaysRescan, int maxAttempts,
             boolean recheckNotChecked, boolean offForProject) {
 
-        public RunOptions(URI server, String serverProblem, boolean alwaysRescan, int maxAttempts, boolean recheckNotChecked) {
+        public RunOptions(@Nullable URI server, @Nullable String serverProblem, boolean alwaysRescan, int maxAttempts,
+                boolean recheckNotChecked) {
             this(server, serverProblem, alwaysRescan, maxAttempts, recheckNotChecked, false);
         }
 
@@ -196,23 +199,28 @@ public final class JobRunner {
     }
 
     /** State of one run. */
+    // o, server, radar, meta and runningStatus are set at the start of run() before any use; a crash report reads
+    // none of them.
+    @SuppressWarnings("NullAway.Init")
     private static final class Run {
         final Job job;
         final CancelToken token;
         RunOptions o;
+        /** The checked server of {@code o}. */
+        URI server;
         Radar radar;
         Meta meta;
         int attempts;
         Duration waitedOn429 = Duration.ZERO;
         String runningStatus;
-        String lastError;
+        @Nullable String lastError;
         boolean savedScan;
         /** Set when the server stopped checking at the hourly host limit. */
         boolean hourlyCut;
         /** Set when the domain scan left less important subdomains unchecked. */
-        ServerEvent.SubdomainLimit limit;
+        ServerEvent.@Nullable SubdomainLimit limit;
         /** Hosts this run sends itself; null while the server scans the whole domain. */
-        List<String> toCheck;
+        @Nullable List<String> toCheck;
         /** Every host a host job sent; checks of other hosts are dropped. */
         final Set<String> sent = new HashSet<>();
         boolean foreignLogged;
@@ -222,26 +230,27 @@ public final class JobRunner {
         /** Rows written by this run, by host. */
         final Map<String, HostResult> rows = new LinkedHashMap<>();
 
-        Run(Job job, CancelToken token, RunOptions o) {
+        Run(Job job, CancelToken token) {
             this.job = job;
             this.token = token;
-            this.o = o;
         }
     }
 
     /** Runs the job to its end; returns the hosts to check again later, empty when there are none. */
     public List<String> run(Job job, CancelToken token) {
-        Run c = new Run(job, token, null);
+        Run c = new Run(job, token);
         try {
             c.o = options.get();
             if (c.o.offForProject()) {
                 throw fail(c, OFF_FOR_PROJECT);
             }
-            if (c.o.server() == null || c.o.serverProblem() != null) {
+            URI server = c.o.server();
+            if (server == null || c.o.serverProblem() != null) {
                 throw fail(c, BAD_SERVER
                         + (c.o.serverProblem() == null ? "" : " " + c.o.serverProblem()));
             }
-            c.radar = radar.apply(c.o.server());
+            c.server = server;
+            c.radar = radar.apply(server);
             if (c.radar == null) {
                 throw fail(c, BAD_SERVER);
             }
@@ -280,7 +289,7 @@ public final class JobRunner {
 
     /** A run that threw: the trace goes to the Errors tab and the job fails. */
     void crashed(Job job, Throwable t) {
-        crashed(new Run(job, job.token(), null), t);
+        crashed(new Run(job, job.token()), t);
     }
 
     private void crashed(Run c, Throwable t) {
@@ -291,9 +300,9 @@ public final class JobRunner {
     }
 
     private Meta meta(Run c) throws Stop, InterruptedException {
-        if (gate.needsCheck(c.o.server())) {
+        if (gate.needsCheck(c.server)) {
             Meta m = call(c, Radar::meta);
-            gate.passed(c.o.server(), m);
+            gate.passed(c.server, m);
             String need = m.minPluginVersion();
             if (need != null && !Version.atLeast(Version.current(), need)) {
                 error(c, "Hirdman Radar: this plugin is older than the server expects (" + Json.oneLine(need) + ")");
@@ -392,7 +401,7 @@ public final class JobRunner {
     }
 
     private void checkHosts(Run c) throws Stop, InterruptedException {
-        sendHosts(c, c.toCheck);
+        sendHosts(c, Objects.requireNonNull(c.toCheck));
         finish(c, false, StatusText.skipped(c.skipped));
     }
 
@@ -412,7 +421,7 @@ public final class JobRunner {
      * One server job, resumed once if the server loses it: the hosts without a Check go out again as host checks.
      * {@code batch} is null for a domain job, whose hosts come from /subdomains.
      */
-    private void runResumable(Run c, JobRequest request, List<String> batch) throws Stop, InterruptedException {
+    private void runResumable(Run c, JobRequest request, @Nullable List<String> batch) throws Stop, InterruptedException {
         Outcome out = serverJob(c, request);
         if (out instanceof Errored e) {
             throw fail(c, e.message());
@@ -420,7 +429,7 @@ public final class JobRunner {
         if (out instanceof Finished) {
             return;
         }
-        List<String> left = (batch != null ? batch : domainHosts(c, request.domain())).stream()
+        List<String> left = (batch != null ? batch : domainHosts(c, Objects.requireNonNull(request.domain()))).stream()
                 .filter(h -> !c.rows.containsKey(h)).toList();
         if (left.isEmpty()) {
             return;
@@ -462,7 +471,8 @@ public final class JobRunner {
     private Outcome serverJob(Run c, JobRequest request) throws Stop, InterruptedException {
         Radar server = c.radar;
         // A start abandoned by a cancel may still create the job: it is deleted when its id comes.
-        String id = call(c, r -> r.startJob(request), false, late -> deleteLater(server, late, DELETE_TIMEOUT));
+        String id = Objects.requireNonNull(
+                call(c, r -> r.startJob(request), false, late -> deleteLater(server, late, DELETE_TIMEOUT)));
         c.token.serverJob(new CancelToken.ServerJob(server, id));
         if (c.token.cancelled()) {
             // Cancelled while the job was being created, so the queue may have missed its id.
@@ -574,19 +584,21 @@ public final class JobRunner {
     }
 
     /** A poll page, or null when the server no longer knows the job (404). */
-    private JobPage poll(Run c, String id, int after) throws Stop, InterruptedException {
+    private @Nullable JobPage poll(Run c, String id, int after) throws Stop, InterruptedException {
         return call(c, r -> r.poll(id, after), true, null);
     }
 
     private <T> T call(Run c, ApiCall<T> call) throws Stop, InterruptedException {
-        return call(c, call, false, null);
+        // Only a poll answers null.
+        return Objects.requireNonNull(call(c, call, false, null));
     }
 
     /**
      * Calls until an answer, retrying per the policy. {@code poll}: a 404 returns null, waits stay short and an
      * unreadable answer is tried again. {@code lateAnswer} gets the answer of a call a cancel left behind.
      */
-    private <T> T call(Run c, ApiCall<T> call, boolean poll, Consumer<T> lateAnswer) throws Stop, InterruptedException {
+    private <T> @Nullable T call(Run c, ApiCall<T> call, boolean poll, @Nullable Consumer<T> lateAnswer)
+            throws Stop, InterruptedException {
         while (true) {
             checkCancelled(c);
             checkPrivate(c);
@@ -607,7 +619,8 @@ public final class JobRunner {
     }
 
     /** Runs one call off the worker thread and waits for it; a cancel or an interrupt stops the wait at once. */
-    private <T> T send(Run c, ApiCall<T> call, Consumer<T> lateAnswer) throws ApiException, Stop, InterruptedException {
+    private <T> T send(Run c, ApiCall<T> call, @Nullable Consumer<T> lateAnswer)
+            throws ApiException, Stop, InterruptedException {
         Radar r = c.radar;
         AtomicBoolean abandoned = new AtomicBoolean();
         FutureTask<T> task = new FutureTask<>(() -> {
@@ -648,7 +661,7 @@ public final class JobRunner {
     }
 
     /** Stops waiting for a call; an answer that has just come is still handed to {@code lateAnswer}. */
-    private static <T> void abandon(FutureTask<T> task, AtomicBoolean abandoned, Consumer<T> lateAnswer) {
+    private static <T> void abandon(FutureTask<T> task, AtomicBoolean abandoned, @Nullable Consumer<T> lateAnswer) {
         abandoned.set(true);
         if (task.cancel(true) || lateAnswer == null) {
             return;
@@ -664,7 +677,7 @@ public final class JobRunner {
         int max = poll && e.kind() == ApiException.Kind.MALFORMED
                 ? Math.min(c.o.maxAttempts(), RetryPolicy.MALFORMED_POLL_ATTEMPTS)
                 : c.o.maxAttempts();
-        switch (RetryPolicy.decide(e, c.attempts, max, c.waitedOn429, c.o.server().getHost(), random, poll)) {
+        switch (RetryPolicy.decide(e, c.attempts, max, c.waitedOn429, c.server.getHost(), random, poll)) {
             case RetryPolicy.Fail f -> {
                 error(c, "Hirdman Radar: " + subject(c.job) + ": " + e.getMessage());
                 throw fail(c, f.reason());
@@ -731,7 +744,7 @@ public final class JobRunner {
         c.job.update(JobState.RUNNING, c.runningStatus);
     }
 
-    private Stop fail(Run c, String reason) {
+    private Stop fail(Run c, @Nullable String reason) {
         c.job.update(JobState.FAILED, StatusText.failed(reason));
         event(c, "Hirdman Radar: " + subject(c.job) + FAILED + reason);
         deleteLive(c);
@@ -771,7 +784,7 @@ public final class JobRunner {
     }
 
     /** True for the event a failed job sends; Burp shows those as errors. Subjects never hold this text. */
-    public static boolean isFailure(String event) {
+    public static boolean isFailure(@Nullable String event) {
         return event != null && event.contains(FAILED);
     }
 
@@ -788,7 +801,7 @@ public final class JobRunner {
         }
     }
 
-    static void deleteQuietly(Radar radar, String serverJobId, Duration timeout) {
+    static void deleteQuietly(@Nullable Radar radar, String serverJobId, Duration timeout) {
         if (radar == null) {
             return;
         }

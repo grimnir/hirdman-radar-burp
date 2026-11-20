@@ -27,6 +27,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.Timer;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.jobs.Job;
 import pro.hirdman.radar.jobs.JobState;
 import pro.hirdman.radar.model.HostNames;
@@ -56,11 +57,11 @@ public final class RadarEditor implements ExtensionProvidedHttpRequestEditor {
     final JLabel queuedLabel = plain(new JLabel());
     /** Drawn as a plain line of text; opens hirdman.pro in the browser. */
     final JButton fullCheck = button(HostView.FULL_CHECK);
-    private HttpRequestResponse current;
-    private String host;
+    private @Nullable HttpRequestResponse current;
+    private @Nullable String host;
     /** The check queued from this view and the row at that moment; null when there is none. */
-    private Job job;
-    private HostResult queuedFrom;
+    private @Nullable Job job;
+    private @Nullable HostResult queuedFrom;
     private final Timer ticker = new Timer(1000, e -> refresh());
 
     /**
@@ -124,7 +125,7 @@ public final class RadarEditor implements ExtensionProvidedHttpRequestEditor {
     /** Redraws from the store; the queued note stays until the row changes, a failed check keeps its reason. */
     void refresh() {
         Optional<HostResult> row = row();
-        if (job != null && (job.state() == JobState.DONE || !row.equals(Optional.of(queuedFrom)))) {
+        if (job != null && (job.state() == JobState.DONE || !row.equals(Optional.ofNullable(queuedFrom)))) {
             job = null;
         }
         boolean waiting = job != null && !job.state().finished();
@@ -160,7 +161,7 @@ public final class RadarEditor implements ExtensionProvidedHttpRequestEditor {
 
     private void checkAgain() {
         Optional<HostResult> row = row();
-        if (row.isPresent() && !offForProject.getAsBoolean()) {
+        if (host != null && row.isPresent() && !offForProject.getAsBoolean()) {
             job = check.apply(host);
             queuedFrom = row.get();
             refresh();
@@ -176,7 +177,7 @@ public final class RadarEditor implements ExtensionProvidedHttpRequestEditor {
     }
 
     @Override
-    public HttpRequest getRequest() {
+    public @Nullable HttpRequest getRequest() {
         return current == null ? null : current.request();
     }
 
@@ -191,7 +192,7 @@ public final class RadarEditor implements ExtensionProvidedHttpRequestEditor {
     }
 
     @Override
-    public Selection selectedData() {
+    public @Nullable Selection selectedData() {
         return null;
     }
 
@@ -201,7 +202,7 @@ public final class RadarEditor implements ExtensionProvidedHttpRequestEditor {
     }
 
     /** Burp may hand in messages without a request or service; those get no tab. */
-    private static Optional<String> hostOf(HttpRequestResponse rr) {
+    private static Optional<String> hostOf(@Nullable HttpRequestResponse rr) {
         if (rr == null || rr.request() == null || rr.request().httpService() == null) {
             return Optional.empty();
         }

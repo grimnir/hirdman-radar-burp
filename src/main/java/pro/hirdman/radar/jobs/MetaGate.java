@@ -6,13 +6,14 @@ import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.Meta;
 
 /** Remembers the last /meta answer and for which server, so it is asked once per Server URL. */
 public final class MetaGate {
 
-    private URI server;
-    private Meta meta;
+    private @Nullable URI server;
+    private @Nullable Meta meta;
     private final List<BiConsumer<URI, Meta>> listeners = new CopyOnWriteArrayList<>();
 
     public synchronized boolean needsCheck(URI s) {

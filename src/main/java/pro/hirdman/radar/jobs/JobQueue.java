@@ -10,6 +10,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.Threads;
 import pro.hirdman.radar.api.Radar;
 
@@ -34,7 +35,7 @@ public final class JobQueue {
     private final List<Job> jobs = new ArrayList<>();
     private final Thread worker;
     private volatile boolean closed;
-    private Job current;
+    private @Nullable Job current;
 
     public JobQueue(JobRunner runner, Consumer<Job> onChange) {
         this(runner, onChange, Executors.newSingleThreadScheduledExecutor(Threads.daemon("hirdman-radar-timer")));
@@ -45,6 +46,8 @@ public final class JobQueue {
         this(runner, onChange);
     }
 
+    // A delayed release cannot fail; the future is never read.
+    @SuppressWarnings("FutureReturnValueIgnored")
     private JobQueue(JobRunner runner, Consumer<Job> onChange, ScheduledExecutorService timer) {
         this(runner, onChange, (task, delay) -> timer.schedule(task, delay.toNanos(), TimeUnit.NANOSECONDS),
                 timer::shutdownNow);
@@ -60,7 +63,7 @@ public final class JobQueue {
     }
 
     /** Queues a job, or returns the same one already waiting or running. */
-    public Job submit(JobKind kind, String domain, List<String> hosts, boolean rescan) {
+    public Job submit(JobKind kind, @Nullable String domain, List<String> hosts, boolean rescan) {
         return add(new Job(kind, domain, hosts, rescan, false, this::changed));
     }
 
@@ -221,7 +224,7 @@ public final class JobQueue {
     }
 
     /** The next waiting job, or null once the queue is closed. */
-    private synchronized Job take() throws InterruptedException {
+    private synchronized @Nullable Job take() throws InterruptedException {
         while (!closed) {
             Job next = nextWaiting();
             if (next != null) {
@@ -233,7 +236,7 @@ public final class JobQueue {
         return null;
     }
 
-    private Job nextWaiting() {
+    private @Nullable Job nextWaiting() {
         return jobs.stream().filter(j -> j.state() == JobState.WAITING && !j.held()).findFirst().orElse(null);
     }
 

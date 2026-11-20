@@ -274,7 +274,7 @@ class IssuePlannerTest {
 
     @Test
     void controlAndBidiCharsAreDroppedAndLengthCapped() {
-        assertEquals("ab\ncd", IssueHtml.clean("a\u0000b\n‮cd\u0007"));
+        assertEquals("ab\ncd", IssueHtml.clean("a\u0000b\n\u202Ecd\u0007"));
         assertEquals(IssueHtml.MAX_LENGTH, IssueHtml.clean("x".repeat(IssueHtml.MAX_LENGTH + 50)).length());
         assertEquals("", IssueHtml.clean(null));
     }

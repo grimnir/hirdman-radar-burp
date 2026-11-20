@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /** Sends one HTTP request; in Burp this goes through Burp's own HTTP stack. */
 public interface Transport {
@@ -28,5 +29,6 @@ public interface Transport {
     }
 
     /** Throws IOException when no answer came back: refused, DNS, timeout, TLS. Never follows redirects. */
-    Reply send(String method, URI url, Map<String, String> headers, String body, Duration timeout) throws IOException;
+    Reply send(String method, URI url, Map<String, String> headers, @Nullable String body, Duration timeout)
+            throws IOException;
 }

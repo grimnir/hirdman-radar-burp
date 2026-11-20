@@ -4,12 +4,13 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Body of POST /api/v1/jobs: a domain scan or a host check, never both. For hosts, {@code rescan} skips the server's
  * shared 24-hour results; it is sent only when set, as older servers knew it for domains only.
  */
-public record JobRequest(String domain, boolean rescan, List<String> hosts) {
+public record JobRequest(@Nullable String domain, boolean rescan, @Nullable List<String> hosts) {
 
     public JobRequest {
         hosts = hosts == null ? null : List.copyOf(hosts);
@@ -34,7 +35,7 @@ public record JobRequest(String domain, boolean rescan, List<String> hosts) {
             o.addProperty("rescan", rescan);
         } else {
             JsonArray list = new JsonArray();
-            hosts.forEach(list::add);
+            Objects.requireNonNull(hosts).forEach(list::add);
             o.add("hosts", list);
             if (rescan) {
                 o.addProperty("rescan", true);

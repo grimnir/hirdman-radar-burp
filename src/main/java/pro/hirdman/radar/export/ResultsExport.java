@@ -13,6 +13,7 @@ import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.Json;
 import pro.hirdman.radar.api.ServerEvent.BreachSource;
 import pro.hirdman.radar.api.ServerEvent.Finding;
@@ -33,7 +34,8 @@ public final class ResultsExport {
     }
 
     /** Counts a check did not produce are null, never 0. */
-    public static String json(String domain, List<HostResult> rows, Predicate<String> inScope, String site, String version,
+    public static String json(@Nullable String domain, List<HostResult> rows, Predicate<String> inScope,
+            @Nullable String site, String version,
             Instant now) {
         JsonObject root = new JsonObject();
         root.addProperty("tool", "Hirdman Radar");
@@ -97,7 +99,7 @@ public final class ResultsExport {
     }
 
     /** The counts of the check before, named as the host's own; null when not known. */
-    private static JsonElement previous(HostResult.Previous p) {
+    private static JsonElement previous(HostResult.@Nullable Previous p) {
         if (p == null) {
             return JsonNull.INSTANCE;
         }
@@ -130,7 +132,7 @@ public final class ResultsExport {
     private static final Pattern NEEDS_QUOTES = Pattern.compile("[,\"\r\n]");
 
     /** RFC 4180 quoting; a leading = + - @ gets a quote mark so spreadsheets do not run it as a formula. */
-    public static String cell(String v) {
+    public static String cell(@Nullable String v) {
         if (v == null || v.isEmpty()) {
             return "";
         }
@@ -138,7 +140,7 @@ public final class ResultsExport {
         return NEEDS_QUOTES.matcher(s).find() ? "\"" + s.replace("\"", "\"\"") + "\"" : s;
     }
 
-    public static String fileName(String domain, String ext) {
+    public static String fileName(@Nullable String domain, String ext) {
         return "hirdman-radar-" + (domain == null ? "results" : domain) + "." + ext;
     }
 

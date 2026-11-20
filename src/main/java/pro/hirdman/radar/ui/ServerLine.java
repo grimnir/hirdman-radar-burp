@@ -3,6 +3,7 @@ package pro.hirdman.radar.ui;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.Version;
 import pro.hirdman.radar.api.ApiException;
 import pro.hirdman.radar.api.Json;
@@ -10,7 +11,7 @@ import pro.hirdman.radar.api.Meta;
 import pro.hirdman.radar.jobs.StatusText;
 
 /** The server line under the results table, with an optional link after it, and the footer note. */
-record ServerLine(String text, boolean tryAgain, String linkText, String linkUrl) {
+record ServerLine(String text, boolean tryAgain, @Nullable String linkText, @Nullable String linkUrl) {
 
     static final ServerLine NONE = new ServerLine("", false);
     static final ServerLine UNEXPECTED = new ServerLine(
@@ -30,7 +31,7 @@ record ServerLine(String text, boolean tryAgain, String linkText, String linkUrl
     }
 
     /** Names {@code host} when it is not the default server; a newer release and the server's announcement are optional. */
-    static ServerLine passed(Meta m, String pluginVersion, String host) {
+    static ServerLine passed(Meta m, String pluginVersion, @Nullable String host) {
         String page = releasePage(m.releaseUrl());
         String need = version(m.minPluginVersion());
         if (need != null && !Version.atLeast(pluginVersion, need)) {
@@ -71,19 +72,19 @@ record ServerLine(String text, boolean tryAgain, String linkText, String linkUrl
     }
 
     /** The server's counts-only note when it gave one, then the coverage line. */
-    static String footer(Meta m) {
+    static String footer(@Nullable Meta m) {
         String note = m == null || m.notes() == null ? null : Json.oneLine(m.notes().countsOnly());
         return (note == null || note.isEmpty() ? COUNTS_ONLY : note) + " " + PARTIAL;
     }
 
     /** A version from the server as one short line, or null. */
-    private static String version(String raw) {
+    private static @Nullable String version(@Nullable String raw) {
         String v = Json.oneLine(raw);
         return v != null && v.length() > MAX_VERSION ? v.substring(0, MAX_VERSION) : v;
     }
 
     /** The server's release page when it is a plain https link, otherwise the GitHub releases. */
-    private static String releasePage(String raw) {
+    private static String releasePage(@Nullable String raw) {
         String url = Json.oneLine(raw);
         if (url == null || !url.startsWith("https://") || url.contains(" ")) {
             return RELEASES;

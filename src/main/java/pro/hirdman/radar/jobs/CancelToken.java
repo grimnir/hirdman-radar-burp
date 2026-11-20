@@ -3,6 +3,7 @@ package pro.hirdman.radar.jobs;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.Radar;
 
 /** Cancellation of one run of a job, and the live server job that run started. */
@@ -14,7 +15,7 @@ public final class CancelToken {
 
     private final AtomicBoolean cancelled = new AtomicBoolean();
     private final List<Runnable> hooks = new CopyOnWriteArrayList<>();
-    private volatile ServerJob serverJob;
+    private volatile @Nullable ServerJob serverJob;
 
     public void cancel() {
         if (cancelled.compareAndSet(false, true)) {
@@ -35,11 +36,11 @@ public final class CancelToken {
     }
 
     /** The server job still running for this run, or null. */
-    public ServerJob serverJob() {
+    public @Nullable ServerJob serverJob() {
         return serverJob;
     }
 
-    void serverJob(ServerJob job) {
+    void serverJob(@Nullable ServerJob job) {
         serverJob = job;
     }
 }

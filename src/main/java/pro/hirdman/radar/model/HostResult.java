@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.ServerEvent.BreachSource;
 import pro.hirdman.radar.api.ServerEvent.Finding;
 
@@ -17,11 +18,11 @@ import pro.hirdman.radar.api.ServerEvent.Finding;
  * {@code previous}: the counts of the counted check before, or null when not known (rows saved by older versions).
  */
 public record HostResult(String host, String domain, HostStatus status, int stealer, int work, int personal,
-        long dbRecords, List<Finding> findings, Instant checkedAt, List<BreachSource> sources, LoginPage login,
-        boolean replayed, Previous previous) {
+        long dbRecords, List<Finding> findings, @Nullable Instant checkedAt, List<BreachSource> sources,
+        @Nullable LoginPage login, boolean replayed, @Nullable Previous previous) {
 
     /** Counts of an earlier check. A null {@code checkedAt} means there was none: every count is then 0. */
-    public record Previous(int stealer, int work, int personal, long dbRecords, Instant checkedAt) {
+    public record Previous(int stealer, int work, int personal, long dbRecords, @Nullable Instant checkedAt) {
 
         /** The host had no counted check before. */
         public static final Previous FIRST = new Previous(0, 0, 0, 0, null);
@@ -57,42 +58,43 @@ public record HostResult(String host, String domain, HostStatus status, int stea
     }
 
     public HostResult(String host, String domain, HostStatus status, int stealer, int work, int personal, long dbRecords,
-            List<Finding> findings, Instant checkedAt, List<BreachSource> sources, LoginPage login, boolean replayed) {
+            List<Finding> findings, @Nullable Instant checkedAt, List<BreachSource> sources, @Nullable LoginPage login,
+            boolean replayed) {
         this(host, domain, status, stealer, work, personal, dbRecords, findings, checkedAt, sources, login, replayed, null);
     }
 
     public HostResult(String host, String domain, HostStatus status, int stealer, int work, int personal, long dbRecords,
-            List<Finding> findings, Instant checkedAt, List<BreachSource> sources, LoginPage login) {
+            List<Finding> findings, @Nullable Instant checkedAt, List<BreachSource> sources, @Nullable LoginPage login) {
         this(host, domain, status, stealer, work, personal, dbRecords, findings, checkedAt, sources, login, false);
     }
 
     public HostResult(String host, String domain, HostStatus status, int stealer, int work, int personal, long dbRecords,
-            List<Finding> findings, Instant checkedAt, List<BreachSource> sources) {
+            List<Finding> findings, @Nullable Instant checkedAt, List<BreachSource> sources) {
         this(host, domain, status, stealer, work, personal, dbRecords, findings, checkedAt, sources, null);
     }
 
     public HostResult(String host, String domain, HostStatus status, int stealer, int work, int personal, long dbRecords,
-            List<Finding> findings, Instant checkedAt) {
+            List<Finding> findings, @Nullable Instant checkedAt) {
         this(host, domain, status, stealer, work, personal, dbRecords, findings, checkedAt, List.of());
     }
 
-    public HostResult withLogin(LoginPage page) {
+    public HostResult withLogin(@Nullable LoginPage page) {
         return new HostResult(host, domain, status, stealer, work, personal, dbRecords, findings, checkedAt, sources, page, replayed,
                 previous);
     }
 
-    public HostResult withPrevious(Previous p) {
+    public HostResult withPrevious(@Nullable Previous p) {
         return new HostResult(host, domain, status, stealer, work, personal, dbRecords, findings, checkedAt, sources, login, replayed,
                 p);
     }
 
     /** A row without a successful check: no counts, no findings. */
-    static HostResult withoutCounts(String host, String domain, HostStatus status, Instant checkedAt) {
+    static HostResult withoutCounts(String host, String domain, HostStatus status, @Nullable Instant checkedAt) {
         return new HostResult(host, domain, status, 0, 0, 0, 0, List.of(), checkedAt);
     }
 
     /** The newest breach date among the sources (YYYY, YYYY-MM or YYYY-MM-DD), or null. */
-    public String latestBreach() {
+    public @Nullable String latestBreach() {
         return sources.stream().map(BreachSource::date).filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
     }
 

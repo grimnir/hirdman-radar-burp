@@ -16,6 +16,7 @@ import java.util.function.Supplier;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.SwingUtilities;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.Version;
 import pro.hirdman.radar.api.ApiException;
 import pro.hirdman.radar.api.ConnectionSettings;
@@ -43,13 +44,13 @@ final class ServerStatus {
     private final Executor background;
     private final TabLog log;
     private final LongSupplier nanoTime;
-    private String watchedUrl;
+    private @Nullable String watchedUrl;
     private boolean watchedOff;
     private boolean checked;
-    private String typedUrl;
+    private @Nullable String typedUrl;
     private long typedAt;
     private int serverCheck;
-    private String releaseUrl;
+    private @Nullable String releaseUrl;
 
     /**
      * A /meta answer that reaches {@code gate}, from this check or from a job, updates the line on the EDT; {@code browse}
@@ -131,7 +132,7 @@ final class ServerStatus {
     }
 
     /** Null when the server answered: the answer reaches the line through the gate. */
-    private ServerLine ask(ConnectionSettings server) {
+    private @Nullable ServerLine ask(ConnectionSettings server) {
         try {
             gate.passed(server.server(), radar.get().meta());
             return null;
@@ -145,7 +146,7 @@ final class ServerStatus {
     }
 
     /** The limits asked afresh, since the line's /meta answer may be old; null when unknown. Blocks: call off the EDT. */
-    Meta.Limits limitsNow(Options o) {
+    Meta.@Nullable Limits limitsNow(Options o) {
         if (o.serverUrlProblem().isPresent()) {
             return null;
         }

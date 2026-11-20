@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.model.HostResult;
 import pro.hirdman.radar.model.ResultStore;
 import pro.hirdman.radar.model.ResultsJson;
@@ -35,9 +36,9 @@ public final class ProjectStore {
     private final Consumer<String> errors;
     private final BiConsumer<String, Throwable> failures;
     private final Set<String> dirty = ConcurrentHashMap.newKeySet();
-    private ResultStore store;
+    private @Nullable ResultStore store;
     private boolean dropLegacy;
-    private ScheduledExecutorService timer;
+    private @Nullable ScheduledExecutorService timer;
 
     /** {@code errors} takes notes about saved data, {@code failures} unexpected exceptions with their stack. */
     public ProjectStore(PersistedObject data, Consumer<String> errors, BiConsumer<String, Throwable> failures) {
@@ -48,20 +49,21 @@ public final class ProjectStore {
 
     /** Reads the saved results and watches them for changes from then on. Data it could not read is kept aside first. */
     public ResultStore load() {
-        store = new ResultStore();
+        ResultStore store = new ResultStore();
+        this.store = store;
         // Loaded rows do not fire listeners, so this hears only later changes.
         store.addDomainListener(dirty::addAll);
         for (String key : data.stringKeys()) {
             if (key.startsWith(DOMAIN_PREFIX)) {
                 String domain = key.substring(DOMAIN_PREFIX.length());
-                read(data.getString(key), UNREADABLE_PREFIX + domain,
+                read(store, data.getString(key), UNREADABLE_PREFIX + domain,
                         "of " + domain + " are too large to keep a copy, they are replaced on the next save of that domain");
             }
         }
         // Read last: an older plugin may have written it after this one saved per domain.
         String legacy = data.getString(KEY);
         if (legacy != null) {
-            dropLegacy = read(legacy, UNREADABLE_KEY, "are too large to keep a copy, they stay as " + KEY);
+            dropLegacy = read(store, legacy, UNREADABLE_KEY, "are too large to keep a copy, they stay as " + KEY);
             dirty.addAll(store.domains());
             tick();
         }
@@ -69,7 +71,7 @@ public final class ProjectStore {
     }
 
     /** Reads one saved block into the store; false when unreadable data was too large to keep aside, as {@code tooLarge} says. */
-    private boolean read(String saved, String asideKey, String tooLarge) {
+    private boolean read(ResultStore store, String saved, String asideKey, String tooLarge) {
         AtomicBoolean unclean = new AtomicBoolean();
         ResultsJson.readInto(store, saved, e -> {
             unclean.set(true);
@@ -87,13 +89,16 @@ public final class ProjectStore {
         return true;
     }
 
+    // tick logs a failed save itself; the future is never read.
+    @SuppressWarnings("FutureReturnValueIgnored")
     public synchronized void start() {
         if (timer == null) {
-            timer = Executors.newSingleThreadScheduledExecutor(r -> {
+            ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "hirdman-radar-save");
                 t.setDaemon(true);
                 return t;
             });
+            this.timer = timer;
             timer.scheduleWithFixedDelay(this::tick, EVERY.toMillis(), EVERY.toMillis(), TimeUnit.MILLISECONDS);
         }
     }

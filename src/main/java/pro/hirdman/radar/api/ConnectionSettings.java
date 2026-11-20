@@ -4,6 +4,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Locale;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 
 /** The radar server address: scheme, host and port only. */
 public record ConnectionSettings(URI server) {
@@ -11,7 +12,7 @@ public record ConnectionSettings(URI server) {
     private static final Set<String> LOCAL = Set.of("localhost", "127.0.0.1", "[::1]");
 
     /** Parses the Server URL setting; the exception message is shown to the user. */
-    public static ConnectionSettings of(String raw) {
+    public static ConnectionSettings of(@Nullable String raw) {
         String s = raw == null ? "" : raw.trim();
         while (s.endsWith("/")) {
             s = s.substring(0, s.length() - 1);
@@ -37,7 +38,7 @@ public record ConnectionSettings(URI server) {
         }
         String scheme = u.getScheme().toLowerCase(Locale.ROOT);
         host = host.toLowerCase(Locale.ROOT);
-        boolean allowed = scheme.equals("https") || scheme.equals("http") && LOCAL.contains(host);
+        boolean allowed = scheme.equals("https") || (scheme.equals("http") && LOCAL.contains(host));
         if (!allowed) {
             throw httpsOnly();
         }

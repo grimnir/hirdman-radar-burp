@@ -142,7 +142,7 @@ class IssueHtmlTest {
             }
             int type = Character.getType(c);
             if (c == '>' || c == '"' || c == '\'' || type == Character.FORMAT || type == Character.SURROGATE
-                    || Character.isISOControl(c) && c != '\n') {
+                    || (Character.isISOControl(c) && c != '\n')) {
                 return "raw character U+" + Integer.toHexString(c) + " at " + i;
             }
             i += Character.charCount(c);

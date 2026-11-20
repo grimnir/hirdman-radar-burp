@@ -4,6 +4,7 @@ import static pro.hirdman.radar.jobs.StatusText.count;
 
 import java.util.List;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.Meta;
 import pro.hirdman.radar.model.HostResult;
 import pro.hirdman.radar.model.HostStatus;
@@ -16,8 +17,8 @@ record RestCheck(String domain, List<String> hosts) {
     }
 
     /** Present once the domain itself was checked and some of its subdomains are still only found. */
-    static Optional<RestCheck> of(String domain, List<HostResult> rows) {
-        if (rows.stream().noneMatch(r -> r.host().equals(domain) && r.checked())) {
+    static Optional<RestCheck> of(@Nullable String domain, List<HostResult> rows) {
+        if (domain == null || rows.stream().noneMatch(r -> r.host().equals(domain) && r.checked())) {
             return Optional.empty();
         }
         List<String> hosts = rows.stream().filter(r -> r.status() == HostStatus.FOUND).map(HostResult::host).toList();
@@ -29,7 +30,7 @@ record RestCheck(String domain, List<String> hosts) {
     }
 
     /** {@code limits} from a fresh /meta, or null when unknown; the hourly limit tells how long the check takes. */
-    String question(Meta.Limits limits) {
+    String question(Meta.@Nullable Limits limits) {
         String q = "Check " + subdomains() + " that " + verb() + " not checked yet?";
         if (limits == null || limits.hostsPerHour() <= 0 || limits.hostsLeft() == null) {
             return q;

@@ -2,6 +2,7 @@ package pro.hirdman.radar.model;
 
 import java.util.List;
 import java.util.Locale;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.ServerEvent.Finding;
 
 /** Ordered lowest first, so compareTo ranks risk. */
@@ -33,7 +34,7 @@ public enum Risk {
         return top;
     }
 
-    public static Risk ofSeverity(String severity) {
+    public static Risk ofSeverity(@Nullable String severity) {
         return switch (severity == null ? "" : severity.toLowerCase(Locale.ROOT)) {
             case "high" -> HIGH;
             case "medium" -> MEDIUM;
