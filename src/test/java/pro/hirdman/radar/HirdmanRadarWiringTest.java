@@ -178,18 +178,6 @@ class HirdmanRadarWiringTest {
     }
 
     @Test
-    void communitysIssueActionSaysWhyItCreatesNone() {
-        List<String> infos = new CopyOnWriteArrayList<>();
-        burp.api.montoya.logging.Logging log = Fakes.fake(burp.api.montoya.logging.Logging.class, (m, a) -> {
-            infos.add(m + " " + a[0]);
-            return null;
-        });
-        assertEquals(0, HirdmanRadar.noIssues(log).applyAsInt(List.of()));
-        assertEquals(List.of("raiseInfoEvent Hirdman Radar: Burp Suite Community Edition has no issues; the counts are in the Hirdman Radar tab"),
-                infos);
-    }
-
-    @Test
     void onlyProfessionalHasTheScanner() {
         assertTrue(HirdmanRadar.hasScanner(BurpSuiteEdition.PROFESSIONAL));
         assertFalse(HirdmanRadar.hasScanner(BurpSuiteEdition.COMMUNITY_EDITION));

@@ -183,7 +183,8 @@ public final class RadarTab extends JPanel {
     private JobKind hintKind;
 
     /**
-     * {@code report} turns the selected rows into Burp issues and returns how many it created; {@code scopeHosts} lists
+     * {@code report} turns the selected rows into Burp issues and returns how many it created, null where Burp has no
+     * issues (Community Edition); {@code scopeHosts} lists
      * the in-scope hosts of the site map and runs in the background.
      */
     public RadarTab(MontoyaApi api, ResultStore store, JobQueue queue, MetaGate gate, Supplier<Options> options,
@@ -476,7 +477,9 @@ public final class RadarTab extends JPanel {
         rowMenu.addSeparator();
         rowMenu.add(scopeItem);
         rowMenu.add(siteMapItem);
-        rowMenu.add(issuesItem);
+        if (report != null) {
+            rowMenu.add(issuesItem);
+        }
         rowMenu.addSeparator();
         rowMenu.add(copyHostsItem);
         rowMenu.add(copyCsvItem);

@@ -325,6 +325,16 @@ class RadarTabTest {
     }
 
     @Test
+    void withoutIssuesTheRowMenuOffersNone() {
+        // Community Edition has no issues, so the item would only explain itself.
+        tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, null, hosts -> "", this::walk,
+                () -> true, () -> suiteFrame, Runnable::run);
+        checked("a.example.com", "high");
+        selectAll();
+        assertFalse(menuItems().contains("Create issues for selected hosts"), menuItems().toString());
+    }
+
+    @Test
     void addSelectedToScopeRunsInTheBackground() {
         List<Runnable> later = new ArrayList<>();
         tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, List::size, hosts -> "", this::walk,

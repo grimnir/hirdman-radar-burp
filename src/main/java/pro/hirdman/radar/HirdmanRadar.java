@@ -50,7 +50,6 @@ public final class HirdmanRadar implements BurpExtension {
     /** Unload must not hold Burp up: the job queue takes up to 2 s of this, queued Burp calls the rest. */
     static final Duration UNLOAD_BUDGET = Duration.ofSeconds(4);
     static final Duration BURP_THREAD_WAIT = Duration.ofSeconds(2);
-    static final String NO_ISSUES = "Hirdman Radar: Burp Suite Community Edition has no issues; the counts are in the Hirdman Radar tab";
 
     @Override
     public void initialize(MontoyaApi api) {
@@ -93,7 +92,8 @@ public final class HirdmanRadar implements BurpExtension {
         // Issues and site map calls go to their own thread: job polling must never wait on Burp.
         BurpThread burpThread = new BurpThread(log::logToError);
         BurpSiteMap siteMap = new BurpSiteMap(api, burpThread);
-        ToIntFunction<List<HostResult>> createIssues = pro ? issues(api, settings, store, burpThread) : noIssues(log);
+        // Community Edition has no issues, so the tab offers no issue action.
+        ToIntFunction<List<HostResult>> createIssues = pro ? issues(api, settings, store, burpThread) : null;
         store.addCheckListener(row -> {
             if (settings.snapshot().addToSiteMap()) {
                 siteMap.addFound(List.of(row.host()));
@@ -159,14 +159,6 @@ public final class HirdmanRadar implements BurpExtension {
         api.scanner().registerPassiveScanCheck(new RadarScanCheck(store::host, issues::forScan, log::logToError),
                 ScanCheckType.PER_HOST);
         return issues::reportAgain;
-    }
-
-    /** Community Edition: the row menu's issue action says why it creates none. */
-    static ToIntFunction<List<HostResult>> noIssues(Logging log) {
-        return rows -> {
-            log.raiseInfoEvent(NO_ISSUES);
-            return 0;
-        };
     }
 
     /** Runs {@code task} once after {@code delay} on a Swing timer, which needs no thread of its own. */
