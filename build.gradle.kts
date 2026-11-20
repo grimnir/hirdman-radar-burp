@@ -9,6 +9,14 @@ repositories {
     mavenCentral()
 }
 
+// One compiler for every build, so the same commit gives the same jar.
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+        vendor = JvmVendorSpec.ADOPTIUM
+    }
+}
+
 val montoya = "net.portswigger.burp.extensions:montoya-api:2026.7"
 
 dependencies {
@@ -38,6 +46,10 @@ tasks.processResources {
 
 tasks.test {
     useJUnitPlatform()
+    // -PtestJava=25 runs the tests on a newer JDK; the classes are still built by the toolchain.
+    providers.gradleProperty("testJava").orNull?.let { v ->
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(v) }
+    }
     // A dialog in a test fails it instead of opening a window on the developer's screen.
     systemProperty("java.awt.headless", "true")
     // ProjectRulesTest reads the sources and READMEs, so a comment change reruns it.
