@@ -212,8 +212,11 @@ public final class ResultsTableModel extends AbstractTableModel {
         if (!h.checked() || p == null) {
             return null;
         }
-        return p.first() ? "First check of this host." : "Previous check " + AT.format(p.checkedAt()) + " UTC: Infostealer "
-                + p.stealer() + ", Work " + p.work() + ", Host logins " + p.personal() + ", DB records " + p.dbRecords() + ".";
+        if (p.first()) {
+            return "First check of this host.";
+        }
+        return "Previous check " + AT.format(p.checkedAt()) + " UTC: Infostealer " + p.stealer() + ", Work " + p.work()
+                + ", Host logins " + p.personal() + ", DB records " + p.dbRecords() + ".";
     }
 
     /**

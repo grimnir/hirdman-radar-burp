@@ -173,20 +173,20 @@ public final class ResultStore {
         synchronized (this) {
             for (HostResult row : imported) {
                 HostResult old = rows.get(row.host());
-                if (old == null && rows.size() >= maxRows) {
-                    full++;
-                    continue;
-                }
-                if (old != null && !newer(row, old)) {
-                    kept++;
-                    continue;
-                }
-                if (old != null && old.login() != null && old.login().betterThan(row.login())) {
-                    row = row.withLogin(old.login());
-                }
                 if (old == null) {
+                    if (rows.size() >= maxRows) {
+                        full++;
+                        continue;
+                    }
                     added++;
                 } else {
+                    if (!newer(row, old)) {
+                        kept++;
+                        continue;
+                    }
+                    if (old.login() != null && old.login().betterThan(row.login())) {
+                        row = row.withLogin(old.login());
+                    }
                     updated++;
                     domains.add(old.domain());
                 }

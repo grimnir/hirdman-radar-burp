@@ -83,6 +83,11 @@ public final class ResultsJson {
                 p.checkedAt() == null ? null : p.checkedAt().toString());
     }
 
+    private static HostResult.Previous restored(SavedPrevious p) {
+        return p == null ? null
+                : new HostResult.Previous(p.stealer(), p.work(), p.personal(), p.dbRecords(), instant(p.checkedAt()));
+    }
+
     private static JsonElement number(Map<String, Integer> texts, String text) {
         return text == null ? null : new JsonPrimitive(texts.computeIfAbsent(text, t -> texts.size()));
     }
@@ -189,9 +194,7 @@ public final class ResultsJson {
         LoginPage login = r.login() == null ? null
                 : LoginPage.restore(r.login().kind(), r.login().label(), r.login().path()).orElse(null);
         // A host never checked has nothing to compare with.
-        HostResult.Previous previous = r.previous() == null || status.get() == HostStatus.FOUND ? null
-                : new HostResult.Previous(r.previous().stealer(), r.previous().work(), r.previous().personal(),
-                        r.previous().dbRecords(), instant(r.previous().checkedAt()));
+        HostResult.Previous previous = status.get() == HostStatus.FOUND ? null : restored(r.previous());
         // Rows without a successful check carry no numbers, whatever the file says.
         if (status.get() == HostStatus.FOUND || status.get() == HostStatus.NOT_CHECKED) {
             return Optional.of(HostResult.withoutCounts(host.get(), domain.get(), status.get(), instant(r.checkedAt()))

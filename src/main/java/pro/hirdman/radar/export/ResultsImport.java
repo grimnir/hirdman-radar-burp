@@ -168,9 +168,9 @@ public final class ResultsImport {
         if (status == HostStatus.CLEAN && !findings.isEmpty()) {
             throw new Refused(at + "status says nothing found but the host has findings");
         }
-        return new HostResult(host.get(), domain.get(), status, (int) count(o, "stealer", at, Integer.MAX_VALUE),
-                (int) count(o, "work_accounts", at, Integer.MAX_VALUE), (int) count(o, "personal_accounts", at, Integer.MAX_VALUE),
-                count(o, "db_records", at, Long.MAX_VALUE), findings, checkedAt, sources, login, false, previous);
+        return new HostResult(host.get(), domain.get(), status, intCount(o, "stealer", at), intCount(o, "work_accounts", at),
+                intCount(o, "personal_accounts", at), count(o, "db_records", at, Long.MAX_VALUE), findings, checkedAt, sources, login,
+                false, previous);
     }
 
     private static HostStatus status(String label, String at) throws Refused {
@@ -191,10 +191,11 @@ public final class ResultsImport {
         }
         List<Finding> out = new ArrayList<>();
         for (int i = 0; i < a.size(); i++) {
-            String fat = at + "finding " + (i + 1) + ": ";
+            String finding = at + "finding " + (i + 1);
             if (!(a.get(i) instanceof JsonObject f)) {
-                throw new Refused(at + "finding " + (i + 1) + " is not an object");
+                throw new Refused(finding + " is not an object");
             }
+            String fat = finding + ": ";
             known(f, FINDING, fat);
             out.add(new Finding(line(f, "kind", fat), line(f, "severity", fat), line(f, "confidence", fat), line(f, "name", fat),
                     null, null, null));
@@ -216,7 +217,7 @@ public final class ResultsImport {
                 throw new Refused(sat + "an entry is not an object");
             }
             known(s, SOURCE, sat);
-            out.add(new BreachSource(line(s, "name", sat), text(s, "date", sat), (int) count(s, "count", sat, Integer.MAX_VALUE)));
+            out.add(new BreachSource(line(s, "name", sat), text(s, "date", sat), intCount(s, "count", sat)));
         }
         return out;
     }
@@ -243,9 +244,8 @@ public final class ResultsImport {
             throw new Refused(at + "previous is not an object");
         }
         known(p, PREVIOUS, pat);
-        return new Previous((int) count(p, "stealer", pat, Integer.MAX_VALUE), (int) count(p, "work_accounts", pat, Integer.MAX_VALUE),
-                (int) count(p, "personal_accounts", pat, Integer.MAX_VALUE), count(p, "db_records", pat, Long.MAX_VALUE),
-                time(p, "checked_at", pat, now));
+        return new Previous(intCount(p, "stealer", pat), intCount(p, "work_accounts", pat), intCount(p, "personal_accounts", pat),
+                count(p, "db_records", pat, Long.MAX_VALUE), time(p, "checked_at", pat, now));
     }
 
     /** Refuses the first field not in {@code allowed}. */
@@ -296,6 +296,11 @@ public final class ResultsImport {
             }
         }
         throw new Refused(at + name + " is not a whole number of 0 or more");
+    }
+
+    /** A required count that fits an int. */
+    private static int intCount(JsonObject o, String name, String at) throws Refused {
+        return (int) count(o, name, at, Integer.MAX_VALUE);
     }
 
     /** An ISO time no later than a day past {@code now}, or null when absent. */

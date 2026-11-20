@@ -138,8 +138,7 @@ final class ExportActions {
 
     /** Reads the chosen export in the background and merges it; the file is checked whole before any row is added. */
     private void importJson() {
-        Optional<Path> path = openDialog.get();
-        path.ifPresent(p -> background.execute(() -> read(p)));
+        openDialog.get().ifPresent(p -> background.execute(() -> read(p)));
     }
 
     private void read(Path path) {

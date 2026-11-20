@@ -115,7 +115,7 @@ public record HostResult(String host, String domain, HostStatus status, int stea
             return "";
         }
         if (previous.first()) {
-            return stealer + work + personal + dbRecords > 0 ? "new" : "";
+            return newSinceLastCheck() ? "new" : "";
         }
         List<String> parts = new ArrayList<>();
         delta(parts, "Infostealer", stealer - (long) previous.stealer());
