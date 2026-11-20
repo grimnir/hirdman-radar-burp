@@ -36,6 +36,7 @@ class ProjectStoreTest {
         causes.add(cause);
     }
     RuntimeException writeFailure;
+    RuntimeException deleteFailure;
 
     final PersistedObject data = fake(PersistedObject.class, (m, a) -> switch (m) {
         case "getString" -> strings.get((String) a[0]);
@@ -49,6 +50,9 @@ class ProjectStoreTest {
             yield null;
         }
         case "deleteString" -> {
+            if (deleteFailure != null) {
+                throw deleteFailure;
+            }
             written.add("-" + a[0]);
             strings.remove((String) a[0]);
             yield null;
@@ -235,6 +239,20 @@ class ProjectStoreTest {
         project.close();
         project.saveNow();
         assertEquals(1, written.size());
+    }
+
+    @Test
+    void anOldKeyBurpWillNotDeleteIsLoggedAndTriedOnTheNextTick() {
+        // The first tick runs inside load: a throw there would stop the plugin from starting.
+        ResultStore before = saved();
+        strings.put(LEGACY, ResultsJson.write(before));
+        deleteFailure = new IllegalStateException("locked");
+        assertEquals(before.all(), project.load().all());
+        assertEquals(List.of("Hirdman Radar: results could not be saved"), errors);
+        assertTrue(strings.containsKey(LEGACY));
+        deleteFailure = null;
+        project.tick();
+        assertFalse(strings.containsKey(LEGACY));
     }
 
     @Test

@@ -277,9 +277,9 @@ class RadarClientTest {
     }
 
     @Test
-    void theAnswerCapIsFourMegabytes() {
+    void theAnswerCapIsEightMegabytes() {
         assertEquals(8 * 1024 * 1024, Transport.MAX_BODY);
-        assertEquals("answer larger than 4 MB", new Transport.TooLarge().getMessage());
+        assertEquals("answer larger than 8 MB", new Transport.TooLarge().getMessage());
     }
 
     @Test

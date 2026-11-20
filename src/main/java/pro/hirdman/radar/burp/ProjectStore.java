@@ -154,11 +154,16 @@ public final class ProjectStore {
                 }
             }
         }
+        if (failure == null && dropLegacy) {
+            try {
+                data.deleteString(KEY);
+                dropLegacy = false;
+            } catch (RuntimeException e) {
+                failure = e;
+            }
+        }
         if (failure != null) {
             failures.accept("Hirdman Radar: results could not be saved", failure);
-        } else if (dropLegacy) {
-            data.deleteString(KEY);
-            dropLegacy = false;
         }
     }
 }

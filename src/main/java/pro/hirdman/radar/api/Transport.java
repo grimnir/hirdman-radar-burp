@@ -14,7 +14,7 @@ public interface Transport {
 
     /** The answer was larger than {@link #MAX_BODY}. */
     final class TooLarge extends IOException {
-        static final String MESSAGE = "answer larger than 4 MB";
+        static final String MESSAGE = "answer larger than " + MAX_BODY / (1024 * 1024) + " MB";
 
         public TooLarge() {
             super(MESSAGE);
