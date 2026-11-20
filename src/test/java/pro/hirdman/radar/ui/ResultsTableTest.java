@@ -134,6 +134,20 @@ class ResultsTableTest {
     }
 
     @Test
+    void anUnchangedRefreshKeepsTheSelectionAndItsLead() {
+        checked("a.example.com", 0, 0, 0, 0, null);
+        checked("b.example.com", 0, 0, 0, 0, null);
+        checked("c.example.com", 0, 0, 0, 0, null);
+        show();
+        table.setRowSelectionInterval(0, 1);
+        model.refresh();
+        table.refreshKeepingSelection();
+        assertEquals(List.of("a.example.com", "b.example.com"), table.selectedHosts());
+        assertEquals(1, table.getSelectionModel().getLeadSelectionIndex());
+        assertEquals(0, table.getSelectionModel().getAnchorSelectionIndex());
+    }
+
+    @Test
     void selectedModelRowsFollowTheView() {
         checked("a.example.com", 0, 0, 0, 0, null);
         checked("b.example.com", 0, 0, 0, 0, null);

@@ -12,6 +12,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import javax.swing.table.AbstractTableModel;
 import pro.hirdman.radar.api.ServerEvent.BreachSource;
+import pro.hirdman.radar.export.ResultsExport;
 import pro.hirdman.radar.jobs.StatusText;
 import pro.hirdman.radar.model.HostResult;
 import pro.hirdman.radar.model.HostStatus;
@@ -79,11 +80,15 @@ public final class ResultsTableModel extends AbstractTableModel {
     public void refresh() {
         List<HostResult> all = domain == null ? List.of() : store.domain(domain);
         List<Row> scoped = all.stream().map(r -> new Row(r, inScope(r.host()))).toList();
-        rows = scoped.stream().filter(r -> filter.keeps(r.result(), r.inScope())).sorted(ORDER).toList();
+        List<Row> next = scoped.stream().filter(r -> filter.keeps(r.result(), r.inScope())).sorted(ORDER).toList();
         leaksOutOfScope = scoped.stream().filter(r -> !r.inScope() && r.result().hasLeaks()).count();
         summary = summary(all);
         rest = RestCheck.of(domain, all);
-        fireTableDataChanged();
+        // An unchanged poll page must not reset the selection and the sort.
+        if (!next.equals(rows)) {
+            rows = next;
+            fireTableDataChanged();
+        }
     }
 
     private String summary(List<HostResult> all) {
@@ -177,12 +182,12 @@ public final class ResultsTableModel extends AbstractTableModel {
         return v instanceof Risk risk ? risk.label() : String.valueOf(v);
     }
 
-    /** CSV of the given model rows, column names first. Cells are host names, words and numbers, so nothing needs quoting. */
+    /** CSV of the given model rows, column names first, quoted and defused as the CSV export does. */
     public String csv(int[] modelRows) {
         StringBuilder b = new StringBuilder(String.join(",", COLUMNS)).append('\n');
         for (int row : modelRows) {
             for (int c = 0; c < COLUMNS.size(); c++) {
-                b.append(c == 0 ? "" : ",").append(text(row, c));
+                b.append(c == 0 ? "" : ",").append(ResultsExport.cell(text(row, c)));
             }
             b.append('\n');
         }

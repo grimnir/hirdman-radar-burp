@@ -112,7 +112,7 @@ public final class ResultsExport {
     private static final Pattern NEEDS_QUOTES = Pattern.compile("[,\"\r\n]");
 
     /** RFC 4180 quoting; a leading = + - @ gets a quote mark so spreadsheets do not run it as a formula. */
-    static String cell(String v) {
+    public static String cell(String v) {
         if (v == null || v.isEmpty()) {
             return "";
         }

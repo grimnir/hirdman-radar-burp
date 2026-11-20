@@ -256,4 +256,27 @@ class ResultsTableModelTest {
         assertTrue(m.inScope("a.example.com"));
         assertTrue(!m.inScope("b.example.com"));
     }
+
+    @Test
+    void csvQuotesCellsAndDefusesFormulas() {
+        checked("a.example.com", 0, 0, 0, 0, 0);
+        store.noteLogin("a.example.com", new LoginPage(LoginPage.Kind.KNOWN_PATH, "=HYPERLINK(\"x\"),y", "/login"));
+        ResultsTableModel m = model(h -> true);
+        assertEquals("a.example.com,,in,0,0,0,0,,\"'=HYPERLINK(\"\"x\"\"),y\",Checked (nothing found)",
+                m.csv(new int[] {0}).split("\n")[1]);
+    }
+
+    @Test
+    void anUnchangedRefreshFiresNothing() {
+        checked("a.example.com", 1, 0, 0, 0, 0, finding("high"));
+        ResultsTableModel m = model(h -> true);
+        List<javax.swing.event.TableModelEvent> events = new ArrayList<>();
+        m.addTableModelListener(events::add);
+        m.refresh();
+        assertEquals(0, events.size());
+        checked("a.example.com", 2, 0, 0, 0, 0, finding("high"));
+        m.refresh();
+        assertEquals(1, events.size());
+        assertEquals("2", m.text(0, ResultsTableModel.STEALER));
+    }
 }
