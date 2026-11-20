@@ -97,6 +97,25 @@ class ResultsTableTest {
     }
 
     @Test
+    void riskColorsFollowTheCellBackground() {
+        checked("a.example.com", 3, 0, 5, 0, "high");
+        show();
+        for (int rgb : new int[] {0x383838, 0x333333, 0xEEEEEE, 0xF2F2F2}) {
+            java.awt.Color bg = new java.awt.Color(rgb);
+            table.setBackground(bg);
+            boolean dark = RiskColors.dark(bg);
+            JLabel risk = cell(0, ResultsTableModel.RISK);
+            assertEquals(bg, risk.getBackground());
+            assertEquals(RiskColors.text(Risk.HIGH, dark), risk.getForeground());
+            assertTrue(RiskColors.contrast(risk.getForeground(), bg) >= RiskColors.MIN_CONTRAST, Integer.toHexString(rgb));
+            assertEquals(RiskColors.text(Risk.MEDIUM, dark), cell(0, ResultsTableModel.PERSONAL).getForeground());
+        }
+        // A background no risk colour reads on: the theme's text colour.
+        table.setBackground(new java.awt.Color(0x808080));
+        assertEquals(table.getForeground(), cell(0, ResultsTableModel.RISK).getForeground());
+    }
+
+    @Test
     void selectedRowsUseTheSelectionColors() {
         checked("a.example.com", 3, 0, 0, 0, "high");
         show();

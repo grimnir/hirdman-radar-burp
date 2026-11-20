@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Set;
 import javax.swing.JTable;
 import javax.swing.ListSelectionModel;
-import javax.swing.UIManager;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableCellRenderer;
@@ -194,9 +193,10 @@ public final class ResultsTable extends JTable {
             if (selected) {
                 setForeground(table.getSelectionForeground());
             } else {
-                Color c = RiskColors.text(colorRisk(value, table.convertColumnIndexToModel(column)),
-                        RiskColors.dark(UIManager.getColor("Table.background")));
-                setForeground(c != null ? c : table.getForeground());
+                // The cell's own background: striped rows differ from the table's.
+                Color bg = getBackground();
+                Color c = RiskColors.text(colorRisk(value, table.convertColumnIndexToModel(column)), RiskColors.dark(bg));
+                setForeground(RiskColors.readable(c, table.getForeground(), bg));
             }
             return this;
         }
