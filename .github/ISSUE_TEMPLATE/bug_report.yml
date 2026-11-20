@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in the plugin does not work as described.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please leave out client and target domains, host names, request and response data, and anything from the plugin's results beyond what shows the bug. Use example.com instead. For a vulnerability, email info@hirdman.pro (see SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Right-click example.com in the site map
+        2. ...
+  - type: input
+    id: plugin
+    attributes:
+      label: Plugin version
+      description: Shown in the Hirdman Radar tab, next to the site link.
+    validations:
+      required: true
+  - type: input
+    id: burp
+    attributes:
+      label: Burp version
+      placeholder: Burp Suite Professional 2026.7
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 26, Windows 11, Ubuntu 24.04
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Error log
+      description: From Extensions > Installed > Hirdman Radar > Errors. Remove domains and host names first.
+      render: text
