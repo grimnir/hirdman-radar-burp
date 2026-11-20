@@ -125,6 +125,8 @@ class RadarTabTest {
             })));
 
     final TestRadar radar = new TestRadar();
+    /** Stands in for Burp's main window. */
+    final javax.swing.JPanel suiteFrame = new javax.swing.JPanel();
 
     RadarTab tab;
 
@@ -136,7 +138,7 @@ class RadarTabTest {
             }, hosts -> {
                 siteMapped.add(hosts);
                 return "site map: " + hosts.size();
-            }, this::walk, Runnable::run);
+            }, this::walk, () -> suiteFrame, Runnable::run);
         }
         return tab;
     }
@@ -204,6 +206,11 @@ class RadarTabTest {
     void selectAll() {
         tab().flush();
         tab().table.selectAll();
+    }
+
+    @Test
+    void dialogsOpenOverBurpsMainWindow() {
+        assertSame(suiteFrame, tab().dialogParent.get());
     }
 
     @Test
@@ -456,7 +463,8 @@ class RadarTabTest {
 
     @Test
     void oneIssueForOneHostIsSingular() {
-        tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, List::size, hosts -> "", this::walk, Runnable::run);
+        tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, List::size, hosts -> "", this::walk,
+                () -> suiteFrame, Runnable::run);
         options.set(new Options(Options.DEFAULT_SERVER, false, false, Risk.LOW, true, false, true, 5, false));
         scope.add("https://a.example.com/");
         checked("a.example.com", "high");

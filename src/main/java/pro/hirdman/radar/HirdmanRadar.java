@@ -3,6 +3,7 @@ package pro.hirdman.radar;
 import burp.api.montoya.BurpExtension;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.logging.Logging;
+import java.awt.Component;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -100,11 +101,14 @@ public final class HirdmanRadar implements BurpExtension {
             }
         });
 
+        // Dialogs open over Burp's main window (BApp Store rule), wherever the user is.
+        Supplier<Component> suiteFrame = () -> api.userInterface().swingUtils().suiteFrame();
         RadarTab tab = Edt.call(() -> new RadarTab(api, store, queue, gate, settings::snapshot, projectSwitch, radar,
-                issues::reportAgain, siteMap::addSelected, () -> BurpSiteMap.inScopeHosts(api.siteMap(), api.scope()::isInScope)));
+                issues::reportAgain, siteMap::addSelected, () -> BurpSiteMap.inScopeHosts(api.siteMap(), api.scope()::isInScope),
+                suiteFrame));
         tabRef.set(tab);
         api.userInterface().registerSuiteTab("Hirdman Radar", tab);
-        api.userInterface().registerContextMenuItemsProvider(new RadarMenu(queue, tab, tab::reveal));
+        api.userInterface().registerContextMenuItemsProvider(new RadarMenu(queue, tab, suiteFrame, tab::reveal));
         api.userInterface().registerHttpRequestEditorProvider(context -> new RadarEditor(store,
                 host -> queue.checkAgain(List.of(host)), api.userInterface()::applyThemeToComponent));
 

@@ -48,15 +48,15 @@ final class ExportActions {
     private final TabLog log;
     private final Consumer<String> message;
     private final Consumer<String> clipboard;
-    private final Component parent;
+    private final Supplier<Component> parent;
     private final Consumer<Component> theme;
 
     /**
      * {@code inScope} asks Burp's scope about a host; {@code message} and {@code clipboard} tell the user and copy text;
-     * {@code parent} and {@code theme} place and style the file chooser.
+     * {@code parent} gives the window the file chooser opens over, {@code theme} styles it.
      */
     ExportActions(ResultsTableModel model, ResultStore store, Supplier<Options> options, Predicate<String> inScope,
-            Executor background, TabLog log, Consumer<String> message, Consumer<String> clipboard, Component parent,
+            Executor background, TabLog log, Consumer<String> message, Consumer<String> clipboard, Supplier<Component> parent,
             Consumer<Component> theme) {
         this.model = model;
         this.store = store;
@@ -139,7 +139,7 @@ final class ExportActions {
         chooser.setDialogTitle("Export results");
         chooser.setSelectedFile(new File(name));
         theme.accept(chooser);
-        return chooser.showSaveDialog(parent) == JFileChooser.APPROVE_OPTION ? Optional.of(chooser.getSelectedFile().toPath())
+        return chooser.showSaveDialog(parent.get()) == JFileChooser.APPROVE_OPTION ? Optional.of(chooser.getSelectedFile().toPath())
                 : Optional.empty();
     }
 }

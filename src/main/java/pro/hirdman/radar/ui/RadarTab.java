@@ -7,6 +7,7 @@ import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.Registration;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
+import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Desktop;
 import java.awt.Dimension;
@@ -142,13 +143,14 @@ public final class RadarTab extends JPanel {
     final ExportActions export;
     /** Puts text on the system clipboard; tests replace it. */
     Consumer<String> clipboard = this::copy;
+    /** The window dialogs open over: Burp's main window, not this tab (BApp Store rule). */
+    final Supplier<Component> dialogParent;
     /** Tells the user something that needs no answer; tests replace it. */
-    Consumer<String> message = m -> JOptionPane.showMessageDialog(this, m, "Hirdman Radar", JOptionPane.INFORMATION_MESSAGE);
+    Consumer<String> message;
     /** Asks before a big host check; tests replace it. */
-    SendConfirm confirm = SendConfirm.dialog(this);
+    SendConfirm confirm;
     /** Remove / Cancel with Cancel as the default: a removed check costs a server check to get back. */
-    Predicate<String> confirmRemove = q -> JOptionPane.showOptionDialog(this, q, "Hirdman Radar", JOptionPane.DEFAULT_OPTION,
-            JOptionPane.QUESTION_MESSAGE, null, REMOVE_BUTTONS, REMOVE_BUTTONS[1]) == 0;
+    Predicate<String> confirmRemove;
     /** Whether the tab is on screen; tests replace it. */
     BooleanSupplier shown = this::isShowing;
     private final AtomicBoolean scopeChanged = new AtomicBoolean();
@@ -172,15 +174,22 @@ public final class RadarTab extends JPanel {
      */
     public RadarTab(MontoyaApi api, ResultStore store, JobQueue queue, MetaGate gate, Supplier<Options> options,
             ProjectSwitch projectSwitch, Supplier<Radar> radar, ToIntFunction<List<HostResult>> report,
-            Function<List<String>, String> addToSiteMap, Supplier<List<String>> scopeHosts) {
-        this(api, store, queue, gate, options, projectSwitch, radar, report, addToSiteMap, scopeHosts, RadarTab::inBackground);
+            Function<List<String>, String> addToSiteMap, Supplier<List<String>> scopeHosts, Supplier<Component> dialogParent) {
+        this(api, store, queue, gate, options, projectSwitch, radar, report, addToSiteMap, scopeHosts, dialogParent,
+                RadarTab::inBackground);
     }
 
     RadarTab(MontoyaApi api, ResultStore store, JobQueue queue, MetaGate gate, Supplier<Options> options,
             ProjectSwitch projectSwitch, Supplier<Radar> radar, ToIntFunction<List<HostResult>> report,
-            Function<List<String>, String> addToSiteMap, Supplier<List<String>> scopeHosts, Executor background) {
+            Function<List<String>, String> addToSiteMap, Supplier<List<String>> scopeHosts, Supplier<Component> dialogParent,
+            Executor background) {
         super(new BorderLayout(0, 6));
         this.api = api;
+        this.dialogParent = dialogParent;
+        this.message = m -> JOptionPane.showMessageDialog(dialogParent.get(), m, "Hirdman Radar", JOptionPane.INFORMATION_MESSAGE);
+        this.confirm = SendConfirm.dialog(dialogParent);
+        this.confirmRemove = q -> JOptionPane.showOptionDialog(dialogParent.get(), q, "Hirdman Radar", JOptionPane.DEFAULT_OPTION,
+                JOptionPane.QUESTION_MESSAGE, null, REMOVE_BUTTONS, REMOVE_BUTTONS[1]) == 0;
         this.store = store;
         this.queue = queue;
         this.options = options;
@@ -199,8 +208,8 @@ public final class RadarTab extends JPanel {
         Consumer<String> tell = m -> message.accept(m);
         SendConfirm ask = q -> confirm.ask(q);
         this.server = new ServerStatus(options, gate, radar, background, log);
-        this.export = new ExportActions(model, store, options, inScope, background, log, tell, t -> clipboard.accept(t), this,
-                api.userInterface()::applyThemeToComponent);
+        this.export = new ExportActions(model, store, options, inScope, background, log, tell, t -> clipboard.accept(t),
+                dialogParent, api.userInterface()::applyThemeToComponent);
         this.scopeCheck = new ScopeCheckButton(options, store, queue, scopeHosts, server::limitsNow, background, log, tell, ask);
 
         setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));

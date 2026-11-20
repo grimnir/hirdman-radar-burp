@@ -31,7 +31,7 @@ class ExportActionsTest {
     final List<String> said = new ArrayList<>();
     final List<String> copied = new ArrayList<>();
     final ExportActions actions = new ExportActions(model, store, Options::defaults, scope::contains, Runnable::run, log,
-            said::add, copied::add, new JPanel(), c -> { });
+            said::add, copied::add, JPanel::new, c -> { });
 
     void checked(String host, String severity) {
         List<Finding> f = severity == null ? List.of() : List.of(new Finding("k", severity, "tentative", "Leak", "", "", ""));

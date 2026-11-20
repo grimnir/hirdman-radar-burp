@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 import javax.swing.JTabbedPane;
@@ -35,8 +36,9 @@ public final class RadarMenu implements ContextMenuItemsProvider {
     private final SendConfirm confirm;
     private final Consumer<List<String>> reveal;
 
-    public RadarMenu(JobQueue queue, Component tab, Consumer<List<String>> reveal) {
-        this(queue, tab, SendConfirm.dialog(tab), reveal);
+    /** {@code dialogParent} gives Burp's main window: the user asks from Proxy or Target, not from the tab. */
+    public RadarMenu(JobQueue queue, Component tab, Supplier<Component> dialogParent, Consumer<List<String>> reveal) {
+        this(queue, tab, SendConfirm.dialog(dialogParent), reveal);
     }
 
     RadarMenu(JobQueue queue, Component tab, SendConfirm confirm, Consumer<List<String>> reveal) {
