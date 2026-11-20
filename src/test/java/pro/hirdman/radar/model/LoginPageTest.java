@@ -63,15 +63,27 @@ class LoginPageTest {
         assertEquals("/reset/", detect("/reset/MQ/c3k9xq-8f1e/", 200, null, true).orElseThrow().path());
         assertEquals("/login", detect("/login;jsessionid=ABC", 200, null, true).orElseThrow().path());
         assertEquals("/admin/", detect("/admin/x", 401, "Basic", false).orElseThrow().path());
-        assertEquals("/a", detect("/a\r\nSet-Cookie: x", 401, "Basic", false).orElseThrow().path());
+        assertEquals("/", detect("/a\r\nSet-Cookie: x", 401, "Basic", false).orElseThrow().path());
         assertEquals("/", detect("no-slash", 401, "Basic", false).orElseThrow().path());
+    }
+
+    @Test
+    void aSegmentWithOddCharactersBecomesTheRoot() {
+        // The path goes into issues and reports: encoded tokens and bidi controls stay out.
+        assertEquals("/", detect("/%41dmin/x", 200, null, true).orElseThrow().path());
+        assertEquals("/", detect("/reset\u202E/x", 200, null, true).orElseThrow().path());
+        assertEquals("/", detect("/a b", 401, "Basic", false).orElseThrow().path());
+        assertEquals("/", detect("/a\n", 401, "Basic", false).orElseThrow().path());
+        assertEquals("/My-App_2.0~x/", detect("/My-App_2.0~x/login", 200, null, true).orElseThrow().path());
+        assertEquals("/" + "a".repeat(64), detect("/" + "a".repeat(64), 200, null, true).orElseThrow().path());
+        assertEquals("/", detect("/" + "a".repeat(65), 200, null, true).orElseThrow().path());
     }
 
     @Test
     void longPathsAreCut() {
         for (String path : new String[] {"/" + "a".repeat(300), "/" + "a".repeat(300) + "/x", "/" + "a".repeat(199) + "/x"}) {
             String kept = detect(path, 200, null, true).orElseThrow().path();
-            assertTrue(kept.length() <= LoginPage.MAX_PATH, kept);
+            assertEquals("/", kept);
             assertTrue(LoginPage.restore("PASSWORD_FORM", "Password form", kept).isPresent(), kept);
         }
     }
@@ -85,6 +97,8 @@ class LoginPageTest {
         assertEquals(Optional.empty(), LoginPage.restore(null, "Password form", "/"));
         assertEquals(Optional.empty(), LoginPage.restore("PASSWORD_FORM", "Password form", "no-slash"));
         assertEquals(Optional.empty(), LoginPage.restore("PASSWORD_FORM", "Password form", "/a\nb"));
+        assertEquals(Optional.empty(), LoginPage.restore("PASSWORD_FORM", "Password form", "/a\n"));
+        assertEquals(Optional.empty(), LoginPage.restore("PASSWORD_FORM", "Password form", "/%41dmin/"));
         assertEquals(Optional.empty(), LoginPage.restore("PASSWORD_FORM", "Password form", "/" + "a".repeat(300)));
         assertTrue(LoginPage.restore("PASSWORD_FORM", "Password form", "/reset/").isPresent());
         assertEquals(Optional.empty(), LoginPage.restore("PASSWORD_FORM", "Password form", "/reset/MQ/c3k9xq-8f1e/"));

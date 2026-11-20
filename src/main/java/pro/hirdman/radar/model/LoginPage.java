@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** A login page seen in Burp's traffic on a host. Labels come from a fixed list, so saved data cannot bring in its own text. */
 public record LoginPage(Kind kind, String label, String path) {
@@ -16,7 +18,8 @@ public record LoginPage(Kind kind, String label, String path) {
         PASSWORD_FORM, HTTP_AUTH, KNOWN_PATH
     }
 
-    static final int MAX_PATH = 200;
+    /** A first path segment kept as it is; anything else, encoded tokens and bidi controls included, becomes "/". */
+    private static final Pattern SEGMENT = Pattern.compile("/[A-Za-z0-9._~-]{1,64}(?:/|(?=;)|\\z)");
     static final String PASSWORD_FORM = "Password form";
     /** Lower-case path prefixes of common SSO, VPN and mail sign-in pages; a prefix ending in "/" also matches without it. */
     private static final Map<String, String> PATHS = new LinkedHashMap<>();
@@ -84,17 +87,10 @@ public record LoginPage(Kind kind, String label, String path) {
         return null;
     }
 
-    /** "/admin/" for "/admin/reset/token": stops at the next "/", a ";" parameter or a control character. */
+    /** "/admin/" for "/admin/reset/token", "/login" for "/login;jsessionid=x", "/" for anything else. */
     private static String firstSegment(String path) {
-        if (!path.startsWith("/")) {
-            return "/";
-        }
-        int limit = Math.min(path.length(), MAX_PATH - 1);
-        int end = 1;
-        while (end < limit && path.charAt(end) != '/' && path.charAt(end) != ';' && !Character.isISOControl(path.charAt(end))) {
-            end++;
-        }
-        return end < path.length() && path.charAt(end) == '/' ? path.substring(0, end + 1) : path.substring(0, end);
+        Matcher m = SEGMENT.matcher(path);
+        return m.lookingAt() ? m.group() : "/";
     }
 
     /** A saved login page, or empty when anything in it is not what the plugin itself writes. */

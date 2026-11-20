@@ -49,6 +49,13 @@ class OptionsTest {
     }
 
     @Test
+    void aPrivateProjectGivesIssuesAndExportsNoLink() {
+        // A link with ?domain= would send the target to the radar when clicked in a report.
+        assertEquals(null, new Options("https://scan.hirdman.pro", true, true, Risk.LOW, true, false, true, 5, false, true).issueOptions()
+                .site());
+    }
+
+    @Test
     void defaultsMatchSpec() {
         // Out-of-scope hosts get issues too: a check the user asked for should show up in Issues.
         assertEquals(new Options("https://scan.hirdman.pro", true, true, Risk.LOW, true, false, true, 5, false), Options.defaults());

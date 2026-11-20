@@ -34,16 +34,16 @@ class ResultsSummaryTest {
         assertEquals("""
                 ## Hirdman Radar: example.com
 
-                4 hosts, 2 with leaks, 1 failed. Checked by Hirdman Radar, summary of 2026-11-17 (UTC).
+                4 hosts, 2 with leaks, 1 failed. Hirdman Radar summary, 2026-11-17 (UTC).
 
                 | Host | Risk | Infostealer | Work | Personal | DB records | Latest breach |
                 |---|---|---|---|---|---|---|
                 | vpn.example.com | High | 12 | 3 | 40 | 7 | 2024-03 |
                 | mail.example.com | Medium | 0 | 0 | 5 | 0 |  |
 
-                Counts only: no accounts, passwords, raw records or dumps. Partial check: about a third of the HIRDMAN \
-                leak archive, with no analyst review. A full HIRDMAN review shows which accounts and devices are affected \
-                and whether the passwords still work.
+                Counts only: no accounts, passwords, raw records or dumps. Partial check: about a third of a full \
+                HIRDMAN review. A full review shows which accounts and devices are affected and whether the passwords still \
+                work.
 
                 Latest scan of example.com and its subdomains: https://scan.hirdman.pro/?domain=example.com
                 """, ResultsSummary.markdown("example.com", rows, "https://scan.hirdman.pro", NOW));
@@ -55,13 +55,13 @@ class ResultsSummaryTest {
         assertEquals("""
                 ## Hirdman Radar: example.com
 
-                1 host, 0 with leaks. Checked by Hirdman Radar, summary of 2026-11-17 (UTC).
+                1 host, 0 with leaks. Hirdman Radar summary, 2026-11-17 (UTC).
 
                 No leaks were counted for the checked hosts.
 
-                Counts only: no accounts, passwords, raw records or dumps. Partial check: about a third of the HIRDMAN \
-                leak archive, with no analyst review. A full HIRDMAN review shows which accounts and devices are affected \
-                and whether the passwords still work.
+                Counts only: no accounts, passwords, raw records or dumps. Partial check: about a third of a full \
+                HIRDMAN review. A full review shows which accounts and devices are affected and whether the passwords still \
+                work.
                 """, ResultsSummary.markdown("example.com", clean, null, NOW));
     }
 }

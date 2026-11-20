@@ -1,18 +1,16 @@
 package pro.hirdman.radar.issues;
 
-import static pro.hirdman.radar.jobs.StatusText.count;
-
+import java.net.URI;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import pro.hirdman.radar.api.Json;
 import pro.hirdman.radar.api.ServerEvent.Finding;
 import pro.hirdman.radar.model.HostNames;
 import pro.hirdman.radar.model.HostResult;
@@ -23,7 +21,16 @@ import pro.hirdman.radar.model.Risk;
 /** Which Burp issues a host row gets. The auto option is the caller's: manual creation uses the same plan. */
 public final class IssuePlanner {
 
-    private static final Set<String> CONFIDENCE = Set.of("certain", "firm", "tentative");
+    /** Finding kinds of the server contract, with the plugin's own name and severity; other kinds get no issue. */
+    private record Kind(String name, Risk risk) {
+    }
+
+    // Names as the server wrote them so far: Burp has no update, a new name would add a second issue for the same host.
+    private static final Map<String, Kind> KINDS = Map.of(
+            "stealer_logs", new Kind("Host found in infostealer logs", Risk.HIGH),
+            "work_accounts", new Kind("Work email addresses found in breaches", Risk.HIGH),
+            "personal_accounts", new Kind("Credentials for host found in breaches", Risk.MEDIUM),
+            "breached_db_records", new Kind("Host found in breached databases", Risk.LOW));
     /** What ConnectionSettings produces; anything else gets no link, so nothing odd reaches the issue HTML. */
     private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC);
     private static final Pattern SITE = Pattern.compile("https?://[a-z0-9.\\-\\[\\]:]+");
@@ -35,8 +42,7 @@ public final class IssuePlanner {
     static final String PREFIX = "Hirdman Radar: ";
     static final String LOGIN = "Login page on a host with leaked records";
     private static final String LOGIN_REMEDIATION = "<p>Check that this login asks for a second factor and is open only to those"
-            + " who need it. A full HIRDMAN review shows which accounts the records belong to and whether their passwords still"
-            + " work.</p>";
+            + " who need it.</p>";
 
     public static String baseUrl(String host) {
         return "https://" + host + "/";
@@ -48,25 +54,27 @@ public final class IssuePlanner {
             return List.of();
         }
         String baseUrl = baseUrl(r.host());
+        String server = siteHost(o.site());
         String link = null;
         Set<String> seen = new HashSet<>();
         List<IssueSpec> out = new ArrayList<>();
         for (Finding f : r.findings()) {
-            // Burp shows names in its own panes, where html.disable cannot be set.
-            String name = f.name() == null ? "" : Json.oneLine(f.name()).replace("<", "").replace(">", "");
-            if (name.isEmpty() || Risk.ofSeverity(f.severity()).compareTo(o.lowest()) < 0) {
+            Kind kind = f.kind() == null ? null : KINDS.get(f.kind());
+            if (kind == null || kind.risk().compareTo(o.lowest()) < 0) {
                 continue;
             }
             // Checked before the HTML is cleaned: a scope pass meets mostly issues that already exist.
-            String key = IssueSpec.key(PREFIX + name, baseUrl);
+            String key = IssueSpec.key(PREFIX + kind.name(), baseUrl);
             if (alreadyReported.contains(key) || !seen.add(key)) {
                 continue;
             }
             if (link == null) {
                 link = sourcesLine(r) + checkedLine(r, o.site());
             }
-            out.add(new IssueSpec(PREFIX + name, IssueHtml.clean(f.detail()) + link, IssueHtml.clean(f.remediation()),
-                    baseUrl, severity(f.severity()), confidence(f.confidence()), IssueHtml.clean(f.background())));
+            // Every finding is tentative: the records are not verified.
+            out.add(new IssueSpec(PREFIX + kind.name(), IssueHtml.clean(f.detail(), server) + link,
+                    IssueHtml.clean(f.remediation(), server), baseUrl, severity(kind.risk()), "tentative",
+                    IssueHtml.clean(f.background(), server)));
         }
         LoginPage login = r.login();
         if (login != null && Risk.LOW.compareTo(o.lowest()) >= 0 && !alreadyReported.contains(IssueSpec.key(PREFIX + LOGIN, baseUrl))) {
@@ -78,10 +86,24 @@ public final class IssuePlanner {
 
     /** Cautious on purpose: the page only looks like a login, and nobody checked whether a leaked password works. */
     private static String loginDetail(HostResult r, LoginPage login) {
+        // Records, not accounts: one account can appear in several records.
+        List<String> parts = new ArrayList<>();
+        if (r.stealer() > 0) {
+            parts.add(r.stealer() + " in infostealer logs");
+        }
+        if (r.work() > 0) {
+            parts.add(r.work() == 1 ? "1 with a work email address" : r.work() + " with work email addresses");
+        }
+        if (r.personal() > 0) {
+            parts.add(r.personal() + " with credentials for the host");
+        }
+        if (r.dbRecords() > 0) {
+            parts.add(r.dbRecords() + " in breached databases");
+        }
         return "<p>Burp traffic shows what looks like a login page on this host: <b>" + IssueHtml.text(login.label()) + "</b> at <b>"
-                + IssueHtml.text(login.path()) + "</b>. The leak archive has records for this host: " + r.stealer()
-                + " in infostealer logs, " + count(r.work(), "work account") + ", " + count(r.personal(), "personal account") + ", "
-                + count(r.dbRecords(), "database record") + ".</p><p>Leaked passwords are often tried on login pages like this one."
+                + IssueHtml.text(login.path()) + "</b>."
+                + (parts.isEmpty() ? "" : " The leak archive has records for this host: " + String.join(", ", parts) + ".")
+                + "</p><p>Leaked passwords are often tried on login pages like this one."
                 + " Hirdman Radar counts records only and did not check whether any password works here.</p>";
     }
 
@@ -92,6 +114,18 @@ public final class IssuePlanner {
             return Optional.empty();
         }
         return Optional.of(site + "/?domain=" + d.get());
+    }
+
+    /** The host of a site that passes {@link #siteUrl}, or null. */
+    static String siteHost(String site) {
+        if (site == null || !SITE.matcher(site).matches()) {
+            return null;
+        }
+        try {
+            return URI.create(site).getHost();
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /** The breaches the host's records come from, as plain text; empty without sources. */
@@ -112,17 +146,12 @@ public final class IssuePlanner {
         return parts.isEmpty() ? "" : "<p>" + String.join(" ", parts) + "</p>";
     }
 
-    private static String severity(String s) {
-        return switch (Risk.ofSeverity(s)) {
+    private static String severity(Risk risk) {
+        return switch (risk) {
             case HIGH -> "high";
             case MEDIUM -> "medium";
             case LOW -> "low";
             case NONE -> "information";
         };
-    }
-
-    private static String confidence(String s) {
-        String c = s == null ? "" : s.toLowerCase(Locale.ROOT);
-        return CONFIDENCE.contains(c) ? c : "tentative";
     }
 }

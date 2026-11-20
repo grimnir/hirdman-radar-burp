@@ -14,8 +14,8 @@ import pro.hirdman.radar.model.HostStatus;
 /** A domain's results as a short Markdown block to paste into a report: totals, hosts with leaks, the notes. */
 public final class ResultsSummary {
 
-    static final String NOTES = ResultsExport.NOTE + " Partial check: about a third of the HIRDMAN leak archive, with no analyst"
-            + " review. A full HIRDMAN review shows which accounts and devices are affected and whether the passwords still work.";
+    static final String NOTES = ResultsExport.NOTE + " Partial check: about a third of a full HIRDMAN review. A full review shows"
+            + " which accounts and devices are affected and whether the passwords still work.";
     private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC);
 
     private ResultsSummary() {
@@ -29,7 +29,7 @@ public final class ResultsSummary {
                 .sorted(Comparator.comparing(HostResult::risk).reversed().thenComparing(HostResult::host)).toList();
         StringBuilder b = new StringBuilder("## Hirdman Radar: ").append(domain).append("\n\n")
                 .append(StatusText.summary(rows.size(), leaks.size(), notCheckedYet, failed))
-                .append(". Checked by Hirdman Radar, summary of ").append(DAY.format(now)).append(" (UTC).\n\n");
+                .append(". Hirdman Radar summary, ").append(DAY.format(now)).append(" (UTC).\n\n");
         if (leaks.isEmpty()) {
             b.append("No leaks were counted for the checked hosts.\n\n");
         } else {

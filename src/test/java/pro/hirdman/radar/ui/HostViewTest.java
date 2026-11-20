@@ -27,7 +27,7 @@ class HostViewTest {
                         finding("odd", "Something else")),
                 AT, List.of(new BreachSource("Combo", "2024-03", 5), new BreachSource("Old", "2019", 1)));
         assertEquals(List.of("vpn.example.com: High risk.",
-                "Infostealer logs: 12. Work accounts: 3. Personal accounts: 40. Database records: 7.",
+                "Infostealer logs: 12. Work records: 3. Personal records: 40. Database records: 7.",
                 "Latest known breach: 2024-03.",
                 "High: Host found in infostealer logs",
                 "Medium: Work accounts in leaks",
@@ -50,7 +50,7 @@ class HostViewTest {
     @Test
     void otherStatesSayWhatIsKnown() {
         assertEquals(List.of("a.example.com: no leaks counted.",
-                "Infostealer logs: 0. Work accounts: 0. Personal accounts: 0. Database records: 0.",
+                "Infostealer logs: 0. Work records: 0. Personal records: 0. Database records: 0.",
                 "Checked 2026-11-17 14:02 UTC. " + NOTE),
                 HostView.lines(new HostResult("a.example.com", "example.com", HostStatus.CLEAN, 0, 0, 0, 0, List.of(), AT)));
         HostResult notChecked = new HostResult("b.example.com", "example.com", HostStatus.NOT_CHECKED, 0, 0, 0, 0, List.of(), AT);
@@ -61,7 +61,7 @@ class HostViewTest {
                 HostView.lines(found));
         assertEquals("Check for leaks", HostView.button(found));
         assertEquals(List.of("d.example.com: leaks counted.",
-                "Infostealer logs: 0. Work accounts: 0. Personal accounts: 1. Database records: 0.", "Odd", NOTE),
+                "Infostealer logs: 0. Work records: 0. Personal records: 1. Database records: 0.", "Odd", NOTE),
                 HostView.lines(new HostResult("d.example.com", "example.com", HostStatus.CHECKED, 0, 0, 1, 0,
                         List.of(finding("odd", "Odd")), null)));
     }
