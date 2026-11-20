@@ -93,6 +93,17 @@ public record LoginPage(Kind kind, String label, String path) {
         return m.lookingAt() ? m.group() : "/";
     }
 
+    /** A login page as the JSON export writes it, by label and path; empty when it is not one the plugin itself writes. */
+    public static Optional<LoginPage> exported(String label, String path) {
+        if (PASSWORD_FORM.equals(label)) {
+            return restore(Kind.PASSWORD_FORM.name(), label, path);
+        }
+        if (SCHEMES.containsValue(label)) {
+            return restore(Kind.HTTP_AUTH.name(), label, path);
+        }
+        return label != null && label.equals(PATHS.get(path)) ? restore(Kind.KNOWN_PATH.name(), label, path) : Optional.empty();
+    }
+
     /** A saved login page, or empty when anything in it is not what the plugin itself writes. */
     public static Optional<LoginPage> restore(String kind, String label, String path) {
         Kind k;

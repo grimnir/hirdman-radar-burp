@@ -69,6 +69,7 @@ The search runs on the HIRDMAN server, and Burp gets the finished list.
 | *Work* | Breach records with work email addresses |
 | *Host logins* | Breach records with credentials for a site on this host, whoever they belong to. For a public service these are its users |
 | *DB records* | Records in breached databases that mention the host together with an email or URL |
+| *Change* | How the counts moved since the host's previous check, for example `Infostealer +12`; *new* for a first check that found leaks. The tooltip shows the previous counts |
 | *Latest breach* | The newest known breach date among the 10 largest sources. Infostealer logs, database records and some sources have no date, so newer breaches are possible |
 | *Login page* | A login page seen in Burp's traffic |
 | *Status* | The state of the check; the tooltip shows when it last ran |
@@ -77,7 +78,7 @@ The search runs on the HIRDMAN server, and Burp gets the finished list.
 
 | Where | What it does |
 |---|---|
-| *Hirdman Radar* tab | A field for the domain (a URL works too) and the *Find subdomains* and *Find and check* buttons. Jobs run in the background. Filters *With leaks*, *Not checked yet*, *Check failed*, *In scope*. Export to JSON or CSV, and a Markdown summary for your report |
+| *Hirdman Radar* tab | A field for the domain (a URL works too) and the *Find subdomains* and *Find and check* buttons. Jobs run in the background. Filters *With leaks*, *New since last check*, *Not checked yet*, *Check failed*, *In scope*. Export to JSON or CSV, import of a JSON export, and a Markdown summary for your report |
 | Context menu | In Target, Proxy, Repeater and Logger: find the subdomains of the selected host's parent domains, or check the selected hosts |
 | Issues | Hosts with leaks get issues at `https://<host>/`, one per kind of finding, with *Tentative* confidence, because no analyst has verified the numbers |
 | Message editor | Requests to a host from the plugin's table get a read-only *Hirdman Radar* tab with that host's counts |
@@ -110,6 +111,19 @@ The search runs on the HIRDMAN server, and Burp gets the finished list.
 
 If the server answers about hosts the job did not ask about, the plugin ignores
 those answers.
+
+## Offline and air-gapped use
+
+1. On a machine with internet access, check the domain and save the results
+   with *Export > JSON...*.
+2. Copy the file to the closed machine and open it there with
+   *Export > Import JSON...* in the Hirdman Radar tab.
+3. Tick *Private project* on that machine.
+
+The import sends nothing. Imported rows join the project's own: for each host
+the newer check wins. After that the plugin sends nothing until you start a
+check, and with *Private project* ticked it sends nothing at all. The same file
+lets a team share results without checking the hosts again.
 
 ## What the server keeps
 

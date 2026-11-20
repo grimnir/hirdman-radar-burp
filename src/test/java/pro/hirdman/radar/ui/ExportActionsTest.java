@@ -20,6 +20,8 @@ import org.junit.jupiter.api.io.TempDir;
 import pro.hirdman.radar.api.ServerEvent.Check;
 import pro.hirdman.radar.api.ServerEvent.Finding;
 import pro.hirdman.radar.config.Options;
+import pro.hirdman.radar.model.HostResult;
+import pro.hirdman.radar.model.HostStatus;
 import pro.hirdman.radar.model.ResultStore;
 
 class ExportActionsTest {
@@ -61,7 +63,7 @@ class ExportActionsTest {
                 items.add(i.getText());
             }
         }
-        assertEquals(List.of("JSON...", "CSV...", "Copy summary"), items);
+        assertEquals(List.of("JSON...", "CSV...", "Copy summary", "Import JSON..."), items);
     }
 
     @Test
@@ -123,5 +125,83 @@ class ExportActionsTest {
         item("CSV...").doClick(0);
         assertEquals(List.of(), log.infos);
         assertEquals(List.of(), log.errors);
+    }
+
+    /** An export of two checked hosts, written where an import will read it. */
+    Path exported(Path dir) throws Exception {
+        ResultStore other = new ResultStore();
+        other.apply("example.com", new Check(false, "a.example.com", 0, 0, 0, 0, 7, true,
+                List.of(new Finding("stealer_logs", "high", "tentative", "Leak", "", "", ""))), Instant.parse("2026-11-17T10:00:00Z"));
+        other.apply("example.com", new Check(false, "c.example.com", 0, 0, 0, 0, 0, true, List.of()),
+                Instant.parse("2026-11-17T10:00:00Z"));
+        Path file = dir.resolve("hirdman-radar-example.com.json");
+        Files.writeString(file, pro.hirdman.radar.export.ResultsExport.json("example.com", other.all(), h -> true, null, "0.2.0",
+                Instant.parse("2026-11-17T11:00:00Z")));
+        return file;
+    }
+
+    @Test
+    void importMergesAnExportAndSaysWhatChanged(@TempDir Path dir) throws Exception {
+        Path file = exported(dir);
+        checked("a.example.com", "high");
+        List<HostResult> checks = new ArrayList<>();
+        store.addCheckListener(checks::add);
+        actions.openDialog = () -> Optional.of(file);
+        item("Import JSON...").doClick(0);
+        SwingUtilities.invokeAndWait(() -> { });
+        assertEquals(7, store.host("a.example.com").orElseThrow().stealer(), "the file's check is newer");
+        assertEquals(HostStatus.CLEAN, store.host("c.example.com").orElseThrow().status());
+        assertEquals(List.of("Imported hirdman-radar-example.com.json: 1 new host, 1 updated with a newer check. Nothing was sent"
+                + " to the radar server."), said);
+        assertEquals(List.of("Hirdman Radar: imported 2 hosts from " + file + ": 1 new, 1 updated, 0 kept"), log.infos);
+        assertEquals(List.of(), checks);
+        actions.openDialog = () -> Optional.of(file);
+        item("Import JSON...").doClick(0);
+        SwingUtilities.invokeAndWait(() -> { });
+        assertEquals("Imported hirdman-radar-example.com.json: 2 kept (the project's check is as new or newer). Nothing was sent to"
+                + " the radar server.", said.get(1));
+    }
+
+    @Test
+    void aFileThatIsNotAnExportIsRefusedAndNothingChanges(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("bad.json");
+        Files.writeString(file, Files.readString(exported(dir)).replace("\"in_scope\"", "\"evil\""));
+        actions.openDialog = () -> Optional.of(file);
+        item("Import JSON...").doClick(0);
+        SwingUtilities.invokeAndWait(() -> { });
+        assertEquals(List.of(), store.all());
+        assertEquals(List.of("Could not import bad.json: host 1 (a.example.com): unknown field \"evil\". Only a JSON export of"
+                + " Hirdman Radar can be imported."), said);
+        assertEquals(List.of("Hirdman Radar: import of " + file + " refused: host 1 (a.example.com): unknown field \"evil\""),
+                log.errors);
+    }
+
+    @Test
+    void aFileTooLargeIsNotRead(@TempDir Path dir) throws Exception {
+        Path file = exported(dir);
+        actions.maxImportBytes = 10;
+        actions.openDialog = () -> Optional.of(file);
+        item("Import JSON...").doClick(0);
+        SwingUtilities.invokeAndWait(() -> { });
+        assertEquals(List.of("Could not import hirdman-radar-example.com.json: the file is too large. Only a JSON export of Hirdman"
+                + " Radar can be imported."), said);
+        assertEquals(List.of(), store.all());
+    }
+
+    @Test
+    void aFileThatCannotBeReadIsSaid(@TempDir Path dir) throws Exception {
+        actions.openDialog = () -> Optional.of(dir.resolve("gone.json"));
+        item("Import JSON...").doClick(0);
+        SwingUtilities.invokeAndWait(() -> { });
+        assertEquals(List.of("Could not read gone.json. Details are in the extension's Errors tab."), said);
+        assertEquals(1, log.errors.size());
+    }
+
+    @Test
+    void aCancelledImportReadsNothing() {
+        actions.openDialog = Optional::empty;
+        item("Import JSON...").doClick(0);
+        assertEquals(List.of(), said);
+        assertEquals(List.of(), log.infos);
     }
 }

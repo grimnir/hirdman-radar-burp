@@ -58,7 +58,8 @@ class ResultsExportTest {
         assertEquals("Infostealer records linked to host", finding.get("name").getAsString());
         assertEquals("high", finding.get("severity").getAsString());
         assertEquals("firm", finding.get("confidence").getAsString());
-        assertEquals(3, finding.size(), "server texts stay out: " + finding);
+        assertEquals("stealer", finding.get("kind").getAsString());
+        assertEquals(4, finding.size(), "server texts stay out: " + finding);
         assertEquals("2024-03", h.get("latest_breach").getAsString());
         JsonObject source = h.getAsJsonArray("breach_sources").get(1).getAsJsonObject();
         assertEquals("Collection #1", source.get("name").getAsString());

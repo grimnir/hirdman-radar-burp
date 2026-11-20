@@ -84,6 +84,8 @@ public final class ResultsExport {
                 o.addProperty("name", Json.oneLine(f.name()));
                 o.addProperty("severity", Json.oneLine(f.severity()));
                 o.addProperty("confidence", Json.oneLine(f.confidence()));
+                // Lets an import of this file make the same Burp issues.
+                o.addProperty("kind", Json.oneLine(f.kind()));
                 findings.add(o);
             }
             h.add("findings", findings);
