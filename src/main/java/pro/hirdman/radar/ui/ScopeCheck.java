@@ -69,9 +69,13 @@ record ScopeCheck(List<String> hosts, int recent, int internal) {
         if (recent == 0 && internal == 0) {
             return "No in-scope host names in the site map.";
         }
-        StringBuilder s = new StringBuilder(recent == 0 ? "No public in-scope host names in the site map."
-                : "Nothing to check: " + count(recent, "in-scope host") + (recent == 1 ? " was" : " were")
-                        + " checked in the last 24 h.");
+        StringBuilder s = new StringBuilder();
+        if (recent == 0) {
+            s.append("No public in-scope host names in the site map.");
+        } else {
+            s.append("Nothing to check: ").append(count(recent, "in-scope host")).append(recent == 1 ? " was" : " were")
+                    .append(" checked in the last 24 h.");
+        }
         appendInternal(s);
         return s.toString();
     }

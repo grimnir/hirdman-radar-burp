@@ -49,8 +49,8 @@ public final class TrafficWatcher implements HttpHandler {
     private volatile Job last;
 
     /**
-     * {@code enabled} is read at most once a second on the request path and at every drain. {@code responses} gets every response except the
-     * plugin's own, on Burp's threads, whatever {@code enabled} says: it only looks and sends nothing.
+     * {@code enabled} is read at most once a second on the request path and at every drain. {@code responses} gets every
+     * response except the plugin's own, on Burp's threads, whatever {@code enabled} says: it only looks and sends nothing.
      */
     public TrafficWatcher(NewHostBatcher batcher, BooleanSupplier enabled, JobQueue queue, Consumer<String> error,
             Consumer<HttpResponseReceived> responses) {
@@ -153,7 +153,8 @@ public final class TrafficWatcher implements HttpHandler {
         Job previous = last;
         if (previous != null && previous.state().finished()) {
             settle(previous);
-            last = previous = null;
+            last = null;
+            previous = null;
         }
         if (!enabled.getAsBoolean()) {
             batcher.clear();

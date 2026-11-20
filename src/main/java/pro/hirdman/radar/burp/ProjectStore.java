@@ -45,29 +45,27 @@ public final class ProjectStore {
     /** Reads the saved results and watches them for changes from then on. Data it could not read is kept aside first. */
     public ResultStore load() {
         store = new ResultStore();
+        // Loaded rows do not fire listeners, so this hears only later changes.
+        store.addDomainListener(dirty::addAll);
         for (String key : data.stringKeys()) {
             if (key.startsWith(DOMAIN_PREFIX)) {
                 String domain = key.substring(DOMAIN_PREFIX.length());
-                read(key, UNREADABLE_PREFIX + domain, "of " + domain + " are too large to keep a copy, they are replaced on the"
-                        + " next save of that domain");
+                read(data.getString(key), UNREADABLE_PREFIX + domain,
+                        "of " + domain + " are too large to keep a copy, they are replaced on the next save of that domain");
             }
         }
         // Read last: an older plugin may have written it after this one saved per domain.
         String legacy = data.getString(KEY);
         if (legacy != null) {
-            dropLegacy = read(KEY, UNREADABLE_KEY, "are too large to keep a copy, they stay as " + KEY);
+            dropLegacy = read(legacy, UNREADABLE_KEY, "are too large to keep a copy, they stay as " + KEY);
             dirty.addAll(store.domains());
-        }
-        store.addDomainListener(dirty::addAll);
-        if (legacy != null) {
             tick();
         }
         return store;
     }
 
-    /** Reads one key into the store; false when unreadable data was too large to keep aside, which {@code tooLarge} says. */
-    private boolean read(String key, String asideKey, String tooLarge) {
-        String saved = data.getString(key);
+    /** Reads one saved block into the store; false when unreadable data was too large to keep aside, as {@code tooLarge} says. */
+    private boolean read(String saved, String asideKey, String tooLarge) {
         AtomicBoolean unclean = new AtomicBoolean();
         ResultsJson.readInto(store, saved, e -> {
             unclean.set(true);
@@ -142,7 +140,9 @@ public final class ProjectStore {
                 }
             } catch (RuntimeException e) {
                 dirty.add(domain);
-                failure = failure == null ? e : failure;
+                if (failure == null) {
+                    failure = e;
+                }
             }
         }
         if (failure != null) {

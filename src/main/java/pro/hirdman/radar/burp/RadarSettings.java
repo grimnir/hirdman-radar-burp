@@ -69,7 +69,7 @@ public final class RadarSettings {
         return read(panel, offForProject.getAsBoolean());
     }
 
-    /** Read on every request Burp sends, so only this one setting. */
+    /** Read on the request path (at most once a second), so only this one setting. */
     public boolean watchTraffic() {
         return watchTraffic(panel, offForProject.getAsBoolean());
     }
