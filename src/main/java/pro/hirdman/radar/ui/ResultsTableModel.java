@@ -162,7 +162,7 @@ public final class ResultsTableModel extends AbstractTableModel {
     public Object getValueAt(int row, int column) {
         Row r = rows.get(row);
         HostResult h = r.result();
-        boolean counted = h.status() == HostStatus.CHECKED || h.status() == HostStatus.CLEAN;
+        boolean counted = h.checked();
         return switch (column) {
             case HOST -> h.host();
             case RISK -> h.risk();
