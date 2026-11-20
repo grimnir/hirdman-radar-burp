@@ -32,8 +32,11 @@ public record Options(String serverUrl, boolean autoIssues, boolean includeOutOf
         return new IssueOptions(autoIssues, includeOutOfScope, lowest, site());
     }
 
-    /** The server as scheme://host[:port], or null when the Server URL cannot be used. */
+    /** The server as scheme://host[:port], or null when the Server URL cannot be used or the project is private. */
     private String site() {
+        if (offForProject) {
+            return null;
+        }
         try {
             return ConnectionSettings.of(serverUrl).server().toString();
         } catch (IllegalArgumentException e) {
