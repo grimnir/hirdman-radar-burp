@@ -26,7 +26,7 @@ account or API key. In Burp's extension list it is called
 
 ## How it works
 
-1. Type a domain on the *Hirdman Radar* tab and click *Check for leaks*, or
+1. Type a domain on the *Hirdman Radar* tab and click *Find and check*, or
    select a request in Proxy and choose
    *Find subdomains and check for leaks* from the context menu.
 2. The server finds the subdomains, drops the infrastructure ones and checks
@@ -77,7 +77,7 @@ The search runs on the HIRDMAN server, and Burp gets the finished list.
 
 | Where | What it does |
 |---|---|
-| *Hirdman Radar* tab | A field for the domain (a URL works too) and the *Find subdomains* and *Check for leaks* buttons. Jobs run in the background. Filters *With leaks*, *Not checked yet*, *Check failed*, *In scope*. Export to JSON or CSV, and a Markdown summary for your report |
+| *Hirdman Radar* tab | A field for the domain (a URL works too) and the *Find subdomains* and *Find and check* buttons. Jobs run in the background. Filters *With leaks*, *Not checked yet*, *Check failed*, *In scope*. Export to JSON or CSV, and a Markdown summary for your report |
 | Context menu | In Target, Proxy, Repeater and Logger: find the subdomains of the selected host's parent domains, or check the selected hosts |
 | Issues | Hosts with leaks get issues at `https://<host>/`, one per kind of finding, with *Tentative* confidence, because no analyst has verified the numbers |
 | Message editor | Requests to a host from the plugin's table get a read-only *Hirdman Radar* tab with that host's counts |

@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import pro.hirdman.radar.api.Meta;
 
@@ -12,7 +13,7 @@ public final class MetaGate {
 
     private URI server;
     private Meta meta;
-    private final List<Consumer<Meta>> listeners = new CopyOnWriteArrayList<>();
+    private final List<BiConsumer<URI, Meta>> listeners = new CopyOnWriteArrayList<>();
 
     public synchronized boolean needsCheck(URI s) {
         return meta == null || !s.equals(server);
@@ -23,7 +24,7 @@ public final class MetaGate {
             server = s;
             meta = m;
         }
-        listeners.forEach(l -> l.accept(m));
+        listeners.forEach(l -> l.accept(s, m));
     }
 
     public synchronized Optional<Meta> last() {
@@ -31,6 +32,11 @@ public final class MetaGate {
     }
 
     public void addListener(Consumer<Meta> onMeta) {
+        listeners.add((s, m) -> onMeta.accept(m));
+    }
+
+    /** Also gets the server the answer came from. */
+    public void addServerListener(BiConsumer<URI, Meta> onMeta) {
         listeners.add(onMeta);
     }
 }

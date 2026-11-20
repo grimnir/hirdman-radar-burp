@@ -18,7 +18,10 @@ import pro.hirdman.radar.model.ResultStore;
 /** "Check in-scope hosts": walks the site map in the background, then asks on the EDT; nothing is sent before the user agrees. */
 final class ScopeCheckButton {
 
-    final JButton button = new JButton("Check in-scope hosts");
+    static final String TEXT = "Check in-scope hosts";
+    static final String READING = "Reading site map...";
+
+    final JButton button = new JButton(TEXT);
 
     private final Supplier<Options> options;
     private final ResultStore store;
@@ -57,6 +60,8 @@ final class ScopeCheckButton {
             return;
         }
         button.setEnabled(false);
+        // A big site map takes seconds to walk.
+        button.setText(READING);
         background.execute(() -> {
             ScopeCheck plan = scopePlan(o);
             Meta.Limits limits = plan == null || plan.isEmpty() ? null : limitsNow.apply(o);
@@ -76,6 +81,7 @@ final class ScopeCheckButton {
 
     private void askScope(ScopeCheck c, Integer hostsLeft) {
         button.setEnabled(true);
+        button.setText(TEXT);
         if (c == null) {
             return;
         }

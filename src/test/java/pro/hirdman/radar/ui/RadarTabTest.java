@@ -48,8 +48,8 @@ import pro.hirdman.radar.model.Risk;
 
 class RadarTabTest {
 
-    static final String EMPTY = "No results yet. Enter a domain above, or right-click a host in Target, Proxy or Repeater "
-            + "and choose Extensions > Hirdman Radar.";
+    static final String EMPTY = "No results yet. Enter a domain above, or right-click a host in Target, Proxy, Repeater or "
+            + "Logger and choose Extensions > Hirdman Radar.";
     static final Meta META = TestRadar.META;
 
     final ResultStore store = new ResultStore();
@@ -125,6 +125,8 @@ class RadarTabTest {
             })));
 
     final TestRadar radar = new TestRadar();
+    /** Stands in for Burp's main window. */
+    final javax.swing.JPanel suiteFrame = new javax.swing.JPanel();
 
     RadarTab tab;
 
@@ -136,7 +138,7 @@ class RadarTabTest {
             }, hosts -> {
                 siteMapped.add(hosts);
                 return "site map: " + hosts.size();
-            }, this::walk, Runnable::run);
+            }, this::walk, () -> true, () -> suiteFrame, Runnable::run);
         }
         return tab;
     }
@@ -207,12 +209,17 @@ class RadarTabTest {
     }
 
     @Test
+    void dialogsOpenOverBurpsMainWindow() {
+        assertSame(suiteFrame, tab().dialogParent.get());
+    }
+
+    @Test
     void emptyStateUntilThereAreResults() {
         assertEquals(EMPTY, tab().emptyLabel.getText());
-        assertTrue(tab().emptyLabel.isVisible());
+        assertTrue(tab().emptyCard.isVisible());
         checked("a.example.com", null);
         tab().flush();
-        assertFalse(tab().emptyLabel.isVisible());
+        assertFalse(tab().emptyCard.isVisible());
         assertEquals("example.com", tab().model.domain());
         assertEquals("1 host, 0 with leaks", tab().summaryLabel.getText());
     }
@@ -257,9 +264,28 @@ class RadarTabTest {
     void buttonsHaveMnemonics() {
         assertEquals("Find subdomains", tab().findButton.getText());
         assertEquals(KeyEvent.VK_F, tab().findButton.getMnemonic());
-        assertEquals("Check for leaks", tab().checkButton.getText());
+        assertEquals("Find and check", tab().checkButton.getText());
         assertEquals(KeyEvent.VK_C, tab().checkButton.getMnemonic());
         assertEquals("Rescan", tab().rescanBox.getText());
+        assertEquals(KeyEvent.VK_R, tab().rescanBox.getMnemonic());
+        assertEquals(KeyEvent.VK_E, tab().export.button.getMnemonic());
+        assertEquals(KeyEvent.VK_D, tab().domainLabel.getDisplayedMnemonic());
+        assertSame(tab().domainField, tab().domainLabel.getLabelFor());
+        assertEquals(KeyEvent.VK_S, tab().showLabel.getDisplayedMnemonic());
+        assertSame(tab().filterBox, tab().showLabel.getLabelFor());
+    }
+
+    @Test
+    void theDomainButtonsSayWhatTheySend() {
+        assertEquals("List the subdomains of the domain without checking them. Sends only the domain name to the radar server.",
+                tab().findButton.getToolTipText());
+        assertEquals("Find the subdomains of the domain and check them for leaks. Sends the domain name to the radar server; "
+                + "a repeat check also sends the subdomains that are new or not checked in the last 24 h.",
+                tab().checkButton.getToolTipText());
+        assertEquals("Scan the domain again instead of sending only its new subdomains and failed checks. A domain is rescanned "
+                + "at most once an hour; until then the saved scan is shown. Hosts checked in the last 24 h are not checked "
+                + "again. Unticks itself once the job is queued.", tab().rescanBox.getToolTipText());
+        assertFalse(tab().rescanBox.getToolTipText().contains("key"));
     }
 
     @Test
@@ -293,7 +319,22 @@ class RadarTabTest {
         assertEquals("out", tab().model.getValueAt(0, ResultsTableModel.SCOPE));
         menuItem("Add selected to scope").doClick(0);
         assertEquals(List.of("https://a.example.com/"), included);
+        tab().shown = () -> true;
+        tab().tick();
         assertEquals("in", tab().model.getValueAt(0, ResultsTableModel.SCOPE));
+    }
+
+    @Test
+    void addSelectedToScopeRunsInTheBackground() {
+        List<Runnable> later = new ArrayList<>();
+        tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, List::size, hosts -> "", this::walk,
+                () -> true, () -> suiteFrame, later::add);
+        checked("a.example.com", null);
+        selectAll();
+        menuItem("Add selected to scope").doClick(0);
+        assertEquals(List.of(), included);
+        later.forEach(Runnable::run);
+        assertEquals(List.of("https://a.example.com/"), included);
     }
 
     @Test
@@ -431,7 +472,6 @@ class RadarTabTest {
         selectAll();
         assertTrue(tab().scopeHint.isVisible());
         assertEquals(HINT_2, tab().scopeHint.getText());
-        assertEquals(Boolean.TRUE, tab().scopeHint.getClientProperty("html.disable"));
 
         scope.add("https://a.example.com/");
         scopeHandlers.forEach(h -> h.scopeChanged(null));
@@ -456,7 +496,8 @@ class RadarTabTest {
 
     @Test
     void oneIssueForOneHostIsSingular() {
-        tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, List::size, hosts -> "", this::walk, Runnable::run);
+        tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, List::size, hosts -> "", this::walk,
+                () -> true, () -> suiteFrame, Runnable::run);
         options.set(new Options(Options.DEFAULT_SERVER, false, false, Risk.LOW, true, false, true, 5, false));
         scope.add("https://a.example.com/");
         checked("a.example.com", "high");
@@ -469,10 +510,10 @@ class RadarTabTest {
     void ticksApplyStoreAndQueueChanges() {
         tab().shown = () -> true;
         tab().tick();
-        assertTrue(tab().emptyLabel.isVisible());
+        assertTrue(tab().emptyCard.isVisible());
         checked("a.example.com", null);
         tab().tick();
-        assertFalse(tab().emptyLabel.isVisible());
+        assertFalse(tab().emptyCard.isVisible());
         queue.submit(JobKind.FIND_SUBDOMAINS, "example.com", List.of(), false);
         tab().tick();
         assertFalse(tab().jobsScroll.isVisible());
@@ -482,14 +523,31 @@ class RadarTabTest {
     }
 
     @Test
+    void aJobChangeAloneLeavesTheTable() {
+        checked("a.example.com", null);
+        tab().shown = () -> true;
+        tab().flush();
+        java.util.concurrent.atomic.AtomicInteger refreshed = new java.util.concurrent.atomic.AtomicInteger();
+        tab().model.addTableModelListener(e -> refreshed.incrementAndGet());
+        queue.submit(JobKind.FIND_SUBDOMAINS, "example.com", List.of(), false);
+        tab().jobsChanged();
+        tab().tick();
+        assertEquals(0, refreshed.get());
+        assertTrue(tab().jobsScroll.isVisible());
+        checked("b.example.com", null);
+        tab().tick();
+        assertEquals(1, refreshed.get());
+    }
+
+    @Test
     void aHiddenTabWaitsUntilItIsShown() {
         tab().shown = () -> false;
         checked("a.example.com", null);
         tab().tick();
-        assertTrue(tab().emptyLabel.isVisible());
+        assertTrue(tab().emptyCard.isVisible());
         tab().shown = () -> true;
         tab().tick();
-        assertFalse(tab().emptyLabel.isVisible());
+        assertFalse(tab().emptyCard.isVisible());
     }
 
     @Test
@@ -536,10 +594,10 @@ class RadarTabTest {
         assertTrue(tab().noticePanel.isVisible());
         assertEquals(List.of(
                 "Hirdman Radar sends the domains and host names you pick to the radar server and gets back counts only. "
-                        + "Nothing else from your project is sent.",
+                        + "Requests, responses, cookies and paths from your project stay in Burp.",
                 "New in-scope hosts from traffic are sent only if you turn that on in Settings > Extensions > Hirdman Radar.",
                 "For a project whose host names must not leave Burp, tick \"Private project\" at the bottom of this tab."),
-                tab().noticeLines.stream().map(javax.swing.JLabel::getText).toList());
+                tab().noticeLines.stream().map(WrapText::getText).toList());
         tab().gotItButton.doClick();
         assertFalse(tab().noticePanel.isVisible());
         assertEquals(Map.of(RadarTab.NOTICE_SEEN, true), prefs);
@@ -552,7 +610,7 @@ class RadarTabTest {
 
     @Test
     void theProjectSwitchIsInTheTabAndKeptInTheProject() throws Exception {
-        assertEquals("Private project: send nothing to the radar", tab().projectBox.getText());
+        assertEquals("Private project: send nothing to the radar server", tab().projectBox.getText());
         assertEquals("(?)", tab().projectHelp.getText());
         assertEquals(Boolean.TRUE, tab().projectHelp.getClientProperty("html.disable"));
         String tip = "For engagements where host names must not leave Burp. While ticked, this project sends nothing to "
@@ -574,6 +632,51 @@ class RadarTabTest {
         assertFalse(projectSwitch.off());
         assertEquals(Map.of("hirdman.radar.off", false), projectData);
         assertEquals(asked + 1, radar.metaCalls.get());
+    }
+
+    @Test
+    void aPrivateProjectQueuesNothingFromTheFieldAndSaysWhyUnderIt() {
+        projectSwitch.set(true);
+        tab().message = m -> {
+            throw new AssertionError("no window: " + m);
+        };
+        tab().domainField.setText("example.com");
+        tab().domainField.postActionEvent();
+        tab().checkButton.doClick(0);
+        tab().findButton.doClick(0);
+        assertTrue(queue.jobs().isEmpty());
+        assertTrue(tab().domainHint.isVisible());
+        assertEquals(RadarTab.PRIVATE_HINT, tab().domainHint.getText());
+        projectSwitch.set(false);
+        tab().findButton.doClick(0);
+        assertFalse(tab().domainHint.isVisible());
+        assertEquals(1, queue.jobs().size());
+    }
+
+    @Test
+    void rowChecksInAPrivateProjectSayWhyInsteadOfQueueing() {
+        checked("a.example.com", null);
+        selectAll();
+        projectSwitch.set(true);
+        List<String> said = new ArrayList<>();
+        tab().message = said::add;
+        menuItem("Check selected hosts").doClick(0);
+        menuItem("Check again").doClick(0);
+        assertEquals(java.util.Collections.nCopies(2, ServerLine.OFF_FOR_PROJECT.text()), said);
+        assertTrue(queue.jobs().isEmpty());
+    }
+
+    @Test
+    void thePrivateTipNamesTheServerOfTheServerUrl() {
+        tab().shown = () -> true;
+        options.set(new Options("https://radar.example.org", true, false, Risk.LOW, true, false, true, 5, false));
+        tab().tick();
+        assertTrue(tab().projectBox.getToolTipText().contains("sends nothing to radar.example.org: no checks"),
+                tab().projectBox.getToolTipText());
+        options.set(new Options("http://bad", true, false, Risk.LOW, true, false, true, 5, false));
+        tab().tick();
+        assertTrue(tab().projectHelp.getToolTipText().contains("sends nothing to the radar server: no checks"),
+                tab().projectHelp.getToolTipText());
     }
 
     @Test
@@ -693,16 +796,89 @@ class RadarTabTest {
     }
 
     @Test
-    void anEmptyTableSaysResultsAreComingWhileAJobIsActive() {
-        assertEquals(RadarTab.EMPTY, RadarTab.emptyText(List.of()));
-        Job done = pro.hirdman.radar.jobs.TestJobs.job(JobKind.FIND_AND_CHECK, "example.com", List.of(),
-                pro.hirdman.radar.jobs.JobState.DONE, "Done");
-        Job waiting = pro.hirdman.radar.jobs.TestJobs.job(JobKind.FIND_AND_CHECK, "example.org", List.of(),
-                pro.hirdman.radar.jobs.JobState.WAITING, "Waiting");
-        assertEquals(RadarTab.EMPTY, RadarTab.emptyText(List.of(done)));
-        assertEquals(RadarTab.WORKING, RadarTab.emptyText(List.of(done, waiting)));
+    void anEmptyTableSaysWhy() {
+        ResultsFilter all = ResultsFilter.ALL;
+        assertEquals(null, RadarTab.emptyText("example.com", all, 3, 3, true, true));
+        assertEquals(RadarTab.EMPTY, RadarTab.emptyText(null, all, 0, 0, false, false));
+        assertEquals(RadarTab.EMPTY, RadarTab.emptyText("example.com", all, 0, 0, false, false));
+        assertEquals(RadarTab.WORKING, RadarTab.emptyText(null, all, 0, 0, false, true));
+        assertEquals("Results for example.com appear here as hosts are checked.",
+                RadarTab.emptyText("example.com", all, 0, 0, true, true));
+        assertEquals("No hosts match \"Check failed\". 9 hosts in total.",
+                RadarTab.emptyText("example.com", ResultsFilter.FAILED, 0, 9, true, true));
+        assertEquals("No hosts match \"With leaks\". 1 host in total.",
+                RadarTab.emptyText("example.com", ResultsFilter.WITH_LEAKS, 0, 1, true, false));
+        assertEquals("No results for example.com.", RadarTab.emptyText("example.com", all, 0, 0, true, false));
         tab().flush();
         assertEquals(RadarTab.EMPTY, tab().emptyLabel.getText());
+        assertFalse(tab().showAllButton.isVisible());
+    }
+
+    @Test
+    void aFilterThatHidesEveryRowSaysSoAndShowAllClearsIt() {
+        checked("a.example.com", null);
+        checked("b.example.com", null);
+        tab().flush();
+        assertFalse(tab().emptyCard.isVisible());
+        tab().filterBox.setSelectedItem(ResultsFilter.WITH_LEAKS);
+        assertTrue(tab().emptyCard.isVisible());
+        assertEquals("No hosts match \"With leaks\". 2 hosts in total.", tab().emptyLabel.getText());
+        assertTrue(tab().showAllButton.isVisible());
+        tab().showAllButton.doClick(0);
+        assertEquals(ResultsFilter.ALL, tab().filterBox.getSelectedItem());
+        assertFalse(tab().emptyCard.isVisible());
+    }
+
+    @Test
+    void aDomainWithoutRowsYetSaysTheyAreOnTheWay() throws Exception {
+        checked("a.example.com", null);
+        hold = new java.util.concurrent.CountDownLatch(1);
+        try {
+            tab().domainField.setText("other.org");
+            tab().checkButton.doClick(0);
+            tab().flush();
+            assertTrue(tab().emptyCard.isVisible());
+            assertEquals("Results for other.org appear here as hosts are checked.", tab().emptyLabel.getText());
+            assertFalse(tab().showAllButton.isVisible());
+        } finally {
+            hold.countDown();
+        }
+    }
+
+    @Test
+    void aHostInTheFieldOffersItsDomainInstead() throws Exception {
+        hold = new java.util.concurrent.CountDownLatch(1);
+        try {
+            tab().domainField.setText("https://www.example.co.uk/login");
+            tab().checkButton.doClick(0);
+            assertEquals("www.example.co.uk", queue.jobs().get(0).domain());
+            assertTrue(tab().domainHint.isVisible());
+            assertEquals("www.example.co.uk is a host. Scan example.co.uk instead?", tab().domainHint.getText());
+            assertTrue(tab().hintButton.isVisible());
+            assertEquals("Scan example.co.uk", tab().hintButton.getText());
+            tab().hintButton.doClick(0);
+            List<Job> jobs = queue.jobs();
+            assertEquals(pro.hirdman.radar.jobs.JobState.CANCELLED, jobs.get(0).state());
+            assertEquals(JobKind.FIND_AND_CHECK, jobs.get(1).kind());
+            assertEquals("example.co.uk", jobs.get(1).domain());
+            assertEquals("example.co.uk", tab().domainField.getText());
+            assertFalse(tab().domainHint.isVisible());
+            assertFalse(tab().hintButton.isVisible());
+        } finally {
+            hold.countDown();
+        }
+    }
+
+    @Test
+    void anInternalNameQueuesNothingAndSaysWhy() {
+        for (String name : List.of("corp.local", "jira.internal", "nas.home.arpa", "srv01.corp")) {
+            tab().domainField.setText(name);
+            tab().findButton.doClick(0);
+            assertEquals(name + " is an internal name; the server cannot check it.", tab().domainHint.getText());
+            assertTrue(tab().domainHint.isVisible());
+            assertFalse(tab().hintButton.isVisible());
+        }
+        assertTrue(queue.jobs().isEmpty());
     }
 
     void press(int key, int modifiers) {

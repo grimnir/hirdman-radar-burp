@@ -107,10 +107,10 @@ public final class Job {
         return token;
     }
 
-    /** Runner updates; ignored once the job is cancelled, so a late answer cannot revive it. */
+    /** Runner updates; ignored once the job is cancelled, so a late answer cannot revive it, and when nothing changes. */
     void update(JobState newState, String newStatus) {
         synchronized (this) {
-            if (state == JobState.CANCELLED) {
+            if (state == JobState.CANCELLED || state == newState && Objects.equals(status, newStatus)) {
                 return;
             }
             state = newState;

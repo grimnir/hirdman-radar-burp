@@ -91,7 +91,7 @@ class JobsPanelTest {
     void rowShowsKindLabelAndStatus() {
         panel.show(List.of(job(JobState.RUNNING, "Checking 37 of 120, about 55 s left"),
                 TestJobs.job(JobKind.CHECK_HOSTS, null, List.of("a.example.com", "b.example.com"), JobState.DONE, "Done: 2 hosts")));
-        assertEquals(List.of("Check for leaks", "example.com", "Checking 37 of 120, about 55 s left",
+        assertEquals(List.of("Find and check", "example.com", "Checking 37 of 120, about 55 s left",
                 "Check hosts", "2 hosts", "Done: 2 hosts"), labels());
     }
 
@@ -170,7 +170,7 @@ class JobsPanelTest {
         panel.show(List.of(a, b));
         assertEquals(List.of("Remove", "Remove", JobsPanel.REMOVE_FINISHED), buttons());
         panel.show(List.of(b));
-        assertEquals(List.of("Check for leaks", "example.com", "b"), labels());
+        assertEquals(List.of("Find and check", "example.com", "b"), labels());
         panel.show(List.of());
         assertTrue(labels().isEmpty());
         assertFalse(panel.hasJobs());

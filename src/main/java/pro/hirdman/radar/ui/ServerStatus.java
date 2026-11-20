@@ -3,9 +3,15 @@ package pro.hirdman.radar.ui;
 import static pro.hirdman.radar.ui.PlainText.label;
 import static pro.hirdman.radar.ui.PlainText.plain;
 
+import java.awt.Font;
+import java.net.URI;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Executor;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import javax.swing.JButton;
 import javax.swing.JLabel;
@@ -18,38 +24,77 @@ import pro.hirdman.radar.api.Radar;
 import pro.hirdman.radar.config.Options;
 import pro.hirdman.radar.jobs.MetaGate;
 
-/** The server line with its Try again button, and the footer note: what /meta says about the Server URL. */
+/** The server line with its Try again button and release link, the TLS warning, and the footer note. */
 final class ServerStatus {
+
+    /** A Server URL is asked about once it has stayed the same this long, not on every key typed. */
+    static final Duration SETTLE = Duration.ofSeconds(1);
 
     final JLabel label = plain(new JLabel());
     final JButton tryAgainButton = new JButton("Try again");
+    final Link releaseLink = new Link("");
+    final JLabel tlsWarning = label("TLS verification is off");
     final JLabel footerLabel = label(ServerLine.footer(null));
 
     private final Supplier<Options> options;
+    private final BooleanSupplier verifyTls;
     private final MetaGate gate;
     private final Supplier<Radar> radar;
     private final Executor background;
     private final TabLog log;
+    private final LongSupplier nanoTime;
     private String watchedUrl;
     private boolean watchedOff;
+    private boolean checked;
+    private String typedUrl;
+    private long typedAt;
     private int serverCheck;
+    private String releaseUrl;
 
-    /** A /meta answer that reaches {@code gate}, from this check or from a job, updates the line on the EDT. */
-    ServerStatus(Supplier<Options> options, MetaGate gate, Supplier<Radar> radar, Executor background, TabLog log) {
+    /**
+     * A /meta answer that reaches {@code gate}, from this check or from a job, updates the line on the EDT; {@code browse}
+     * opens the release page and runs in the background.
+     */
+    ServerStatus(Supplier<Options> options, BooleanSupplier verifyTls, MetaGate gate, Supplier<Radar> radar, Executor background,
+            TabLog log, Consumer<String> browse, LongSupplier nanoTime) {
         this.options = options;
+        this.verifyTls = verifyTls;
         this.gate = gate;
         this.radar = radar;
         this.background = background;
         this.log = log;
+        this.nanoTime = nanoTime;
         tryAgainButton.addActionListener(e -> check());
         tryAgainButton.setVisible(false);
-        gate.addListener(m -> SwingUtilities.invokeLater(() -> showMeta(m)));
+        releaseLink.setVisible(false);
+        releaseLink.addActionListener(e -> {
+            String url = releaseUrl;
+            background.execute(() -> browse.accept(url));
+        });
+        tlsWarning.setFont(tlsWarning.getFont().deriveFont(Font.BOLD));
+        tlsWarning.setToolTipText("The radar server's certificate is not checked. Turn the check back on in Settings > "
+                + "Extensions > Hirdman Radar unless a proxy re-signs HTTPS.");
+        tlsWarning.setVisible(false);
+        gate.addServerListener((server, m) -> SwingUtilities.invokeLater(() -> showMeta(server, m)));
     }
 
-    /** Asks the server again when the Server URL or the project switch has changed. */
+    /** Asks the server again when the project switch has changed, or the Server URL has changed and settled. */
     void watch() {
+        tlsWarning.setVisible(!verifyTls.getAsBoolean());
         Options o = options.get();
-        if (!Objects.equals(o.serverUrl(), watchedUrl) || o.offForProject() != watchedOff) {
+        if (!checked || o.offForProject() != watchedOff) {
+            check();
+            return;
+        }
+        if (Objects.equals(o.serverUrl(), watchedUrl)) {
+            typedUrl = null;
+            return;
+        }
+        long now = nanoTime.getAsLong();
+        if (!Objects.equals(o.serverUrl(), typedUrl)) {
+            typedUrl = o.serverUrl();
+            typedAt = now;
+        } else if (now - typedAt >= SETTLE.toNanos()) {
             check();
         }
     }
@@ -57,8 +102,11 @@ final class ServerStatus {
     /** /meta in the background; a later check makes the answer of an earlier one stale. */
     void check() {
         Options o = options.get();
+        checked = true;
+        typedUrl = null;
         watchedUrl = o.serverUrl();
         watchedOff = o.offForProject();
+        tlsWarning.setVisible(!verifyTls.getAsBoolean());
         int check = ++serverCheck;
         if (watchedOff) {
             show(ServerLine.OFF_FOR_PROJECT);
@@ -109,8 +157,13 @@ final class ServerStatus {
         }
     }
 
-    private void showMeta(Meta m) {
-        show(ServerLine.passed(m, Version.current()));
+    /** An answer about another server than the current Server URL, or in a private project, leaves the line. */
+    private void showMeta(URI server, Meta m) {
+        Options o = options.get();
+        if (o.offForProject() || o.serverUrlProblem().isPresent() || !ConnectionSettings.of(o.serverUrl()).server().equals(server)) {
+            return;
+        }
+        show(ServerLine.passed(m, Version.current(), o.serverHost()));
         footerLabel.setText(ServerLine.footer(m));
     }
 
@@ -118,5 +171,9 @@ final class ServerStatus {
         label.setText(line.text());
         PlainText.tip(label, line.text());
         tryAgainButton.setVisible(line.tryAgain());
+        releaseUrl = line.linkUrl();
+        releaseLink.setText(line.linkText() == null ? "" : line.linkText());
+        releaseLink.setToolTipText(line.linkUrl());
+        releaseLink.setVisible(line.linkUrl() != null);
     }
 }

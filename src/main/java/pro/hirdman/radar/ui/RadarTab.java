@@ -7,13 +7,10 @@ import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.Registration;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
-import java.awt.Cursor;
-import java.awt.Desktop;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
-import java.awt.Font;
 import java.awt.HeadlessException;
-import java.awt.Insets;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
@@ -21,11 +18,10 @@ import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.io.IOException;
-import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executor;
@@ -54,10 +50,8 @@ import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
-import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
-import javax.swing.UIManager;
 import javax.swing.event.PopupMenuEvent;
 import javax.swing.event.PopupMenuListener;
 import pro.hirdman.radar.Version;
@@ -71,6 +65,7 @@ import pro.hirdman.radar.jobs.JobKind;
 import pro.hirdman.radar.jobs.JobQueue;
 import pro.hirdman.radar.jobs.MetaGate;
 import pro.hirdman.radar.jobs.StatusText;
+import pro.hirdman.radar.menu.ParentDomains;
 import pro.hirdman.radar.model.HostNames;
 import pro.hirdman.radar.model.HostResult;
 import pro.hirdman.radar.model.ResultStore;
@@ -78,13 +73,22 @@ import pro.hirdman.radar.model.ResultStore;
 /** The Hirdman Radar suite tab: domain field, Jobs strip, results table, server line and footer, in Burp's own theme. */
 public final class RadarTab extends JPanel {
 
-    static final String EMPTY = "No results yet. Enter a domain above, or right-click a host in Target, Proxy or Repeater "
-            + "and choose Extensions > Hirdman Radar.";
+    static final String EMPTY = "No results yet. Enter a domain above, or right-click a host in Target, Proxy, Repeater or "
+            + "Logger and choose Extensions > Hirdman Radar.";
     static final String SITE = "https://hirdman.pro";
+    /** The footer link: the site with source tags, so visits from Burp can be told apart. */
+    static final String SITE_LINK = Link.tagged(SITE);
     static final String WORKING = "Results appear here as hosts are checked.";
-    static final String RESCAN_TIP = "Scan the domain again instead of using the saved scan or the checks of the last 24 h. "
-            + "Without a key, a domain can be rescanned once an hour. Unticks itself once the job is queued.";
+    static final String FIND_TIP = "List the subdomains of the domain without checking them. "
+            + "Sends only the domain name to the radar server.";
+    static final String CHECK_TIP = "Find the subdomains of the domain and check them for leaks. Sends the domain name to the "
+            + "radar server; a repeat check also sends the subdomains that are new or not checked in the last 24 h.";
+    static final String RESCAN_TIP = "Scan the domain again instead of sending only its new subdomains and failed checks. "
+            + "A domain is rescanned at most once an hour; until then the saved scan is shown. Hosts checked in the last 24 h "
+            + "are not checked again. Unticks itself once the job is queued.";
     static final String NOT_A_DOMAIN = "Enter a domain name like example.com. IP addresses cannot be checked.";
+    static final String PRIVATE_HINT = "This project is private: nothing is sent to the radar server. Untick \"Private project\" "
+            + "at the bottom of this tab to check a domain.";
     private static final String[] REMOVE_BUTTONS = {"Remove", "Cancel"};
     private static final Duration PERIOD = Duration.ofMillis(250);
     private static final String TABLE_CARD = "table";
@@ -92,12 +96,9 @@ public final class RadarTab extends JPanel {
     static final String NOTICE_SEEN = "noticeSeen";
     private static final List<String> NOTICE = List.of(
             "Hirdman Radar sends the domains and host names you pick to the radar server and gets back counts only. "
-                    + "Nothing else from your project is sent.",
+                    + "Requests, responses, cookies and paths from your project stay in Burp.",
             "New in-scope hosts from traffic are sent only if you turn that on in Settings > Extensions > Hirdman Radar.",
             "For a project whose host names must not leave Burp, tick \"Private project\" at the bottom of this tab.");
-    private static final String PRIVATE_TIP = "For engagements where host names must not leave Burp. While ticked, this project "
-            + "sends nothing to scan.hirdman.pro: no checks, no subdomain search, no traffic checks. Results already here stay. "
-            + "Other projects are not affected.";
 
     private final MontoyaApi api;
     private final ResultStore store;
@@ -108,33 +109,42 @@ public final class RadarTab extends JPanel {
     private final Function<List<String>, String> addToSiteMap;
     private final Executor background;
     private final TabLog log;
-    private final UpdateCoalescer updates = new UpdateCoalescer(PERIOD, this::flush);
+    /** Rows and jobs change apart: a job's progress alone does not refresh the table. */
+    private final UpdateCoalescer rowUpdates = new UpdateCoalescer(PERIOD, this::flushRows);
+    private final UpdateCoalescer jobUpdates = new UpdateCoalescer(PERIOD, this::flushJobs);
     private final Registration scopeWatch;
     final Timer timer;
 
     final JPanel noticePanel = new JPanel(new BorderLayout(12, 0));
-    final List<JLabel> noticeLines = NOTICE.stream().map(PlainText::label).toList();
+    final List<WrapText> noticeLines = NOTICE.stream().map(WrapText::new).toList();
     final JButton gotItButton = new JButton("Got it");
     final JTextField domainField = new JTextField(24);
     final JButton findButton = new JButton("Find subdomains");
-    final JButton checkButton = new JButton("Check for leaks");
+    final JButton checkButton = new JButton("Find and check");
     final JCheckBox rescanBox = new JCheckBox("Rescan");
-    final JLabel domainHint = plain(new JLabel());
+    final JLabel domainLabel = new JLabel("Domain");
+    final WrapText domainHint = new WrapText("");
+    /** Offers the registrable domain when a host was typed. */
+    final JButton hintButton = new Link("");
     final ScopeCheckButton scopeCheck;
     final JobsPanel jobsPanel;
+    final DoneLine doneLine = new DoneLine();
     final JScrollPane jobsScroll;
     final JComboBox<String> domainBox = new JComboBox<>();
     final JLabel summaryLabel = plain(new JLabel());
-    final JLabel scopeHint = plain(new JLabel());
-    final JPanel restPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-    final JLabel restLabel = plain(new JLabel());
+    final WrapText scopeHint = new WrapText("");
+    final JPanel restPanel = new JPanel(new BorderLayout(6, 0));
+    final WrapText restLabel = new WrapText("");
     final JButton restButton = new JButton("Check them");
     final JComboBox<ResultsFilter> filterBox = new JComboBox<>(ResultsFilter.values());
+    final JLabel showLabel = new JLabel("Show");
     final ResultsTableModel model;
     final ResultsTable table;
-    final JLabel emptyLabel = label(EMPTY, SwingConstants.CENTER);
+    final JPanel emptyCard = new JPanel(new BorderLayout(0, 8));
+    final WrapText emptyLabel = new WrapText(EMPTY);
+    final JButton showAllButton = new JButton("Show all");
     final ServerStatus server;
-    final JCheckBox projectBox = new JCheckBox("Private project: send nothing to the radar");
+    final JCheckBox projectBox = new JCheckBox("Private project: send nothing to the radar server");
     final JLabel projectHelp = label("(?)");
     final JButton link = new Link("hirdman.pro");
     final JLabel versionLabel = new Note("Hirdman Radar " + Version.current());
@@ -142,13 +152,14 @@ public final class RadarTab extends JPanel {
     final ExportActions export;
     /** Puts text on the system clipboard; tests replace it. */
     Consumer<String> clipboard = this::copy;
+    /** The window dialogs open over: Burp's main window, not this tab (BApp Store rule). */
+    final Supplier<Component> dialogParent;
     /** Tells the user something that needs no answer; tests replace it. */
-    Consumer<String> message = m -> JOptionPane.showMessageDialog(this, m, "Hirdman Radar", JOptionPane.INFORMATION_MESSAGE);
+    Consumer<String> message;
     /** Asks before a big host check; tests replace it. */
-    SendConfirm confirm = SendConfirm.dialog(this);
+    SendConfirm confirm;
     /** Remove / Cancel with Cancel as the default: a removed check costs a server check to get back. */
-    Predicate<String> confirmRemove = q -> JOptionPane.showOptionDialog(this, q, "Hirdman Radar", JOptionPane.DEFAULT_OPTION,
-            JOptionPane.QUESTION_MESSAGE, null, REMOVE_BUTTONS, REMOVE_BUTTONS[1]) == 0;
+    Predicate<String> confirmRemove;
     /** Whether the tab is on screen; tests replace it. */
     BooleanSupplier shown = this::isShowing;
     private final AtomicBoolean scopeChanged = new AtomicBoolean();
@@ -165,6 +176,11 @@ public final class RadarTab extends JPanel {
     private final JMenuItem copyCsvItem = new JMenuItem("Copy as CSV");
     private final JMenuItem removeItem = new JMenuItem("Remove from results");
     private boolean updatingDomains;
+    private boolean anyStored;
+    private String tipHost = "";
+    /** The job a "Scan example.com instead" link replaces, and its kind. */
+    private Job hintJob;
+    private JobKind hintKind;
 
     /**
      * {@code report} turns the selected rows into Burp issues and returns how many it created; {@code scopeHosts} lists
@@ -172,15 +188,23 @@ public final class RadarTab extends JPanel {
      */
     public RadarTab(MontoyaApi api, ResultStore store, JobQueue queue, MetaGate gate, Supplier<Options> options,
             ProjectSwitch projectSwitch, Supplier<Radar> radar, ToIntFunction<List<HostResult>> report,
-            Function<List<String>, String> addToSiteMap, Supplier<List<String>> scopeHosts) {
-        this(api, store, queue, gate, options, projectSwitch, radar, report, addToSiteMap, scopeHosts, RadarTab::inBackground);
+            Function<List<String>, String> addToSiteMap, Supplier<List<String>> scopeHosts, BooleanSupplier verifyTls,
+            Supplier<Component> dialogParent) {
+        this(api, store, queue, gate, options, projectSwitch, radar, report, addToSiteMap, scopeHosts, verifyTls, dialogParent,
+                RadarTab::inBackground);
     }
 
     RadarTab(MontoyaApi api, ResultStore store, JobQueue queue, MetaGate gate, Supplier<Options> options,
             ProjectSwitch projectSwitch, Supplier<Radar> radar, ToIntFunction<List<HostResult>> report,
-            Function<List<String>, String> addToSiteMap, Supplier<List<String>> scopeHosts, Executor background) {
+            Function<List<String>, String> addToSiteMap, Supplier<List<String>> scopeHosts, BooleanSupplier verifyTls,
+            Supplier<Component> dialogParent, Executor background) {
         super(new BorderLayout(0, 6));
         this.api = api;
+        this.dialogParent = dialogParent;
+        this.message = m -> JOptionPane.showMessageDialog(dialogParent.get(), m, "Hirdman Radar", JOptionPane.INFORMATION_MESSAGE);
+        this.confirm = SendConfirm.dialog(dialogParent);
+        this.confirmRemove = q -> JOptionPane.showOptionDialog(dialogParent.get(), q, "Hirdman Radar", JOptionPane.DEFAULT_OPTION,
+                JOptionPane.QUESTION_MESSAGE, null, REMOVE_BUTTONS, REMOVE_BUTTONS[1]) == 0;
         this.store = store;
         this.queue = queue;
         this.options = options;
@@ -198,9 +222,10 @@ public final class RadarTab extends JPanel {
         // The parts call the tab's dialogs and clipboard through these lambdas, so tests can replace them later.
         Consumer<String> tell = m -> message.accept(m);
         SendConfirm ask = q -> confirm.ask(q);
-        this.server = new ServerStatus(options, gate, radar, background, log);
-        this.export = new ExportActions(model, store, options, inScope, background, log, tell, t -> clipboard.accept(t), this,
-                api.userInterface()::applyThemeToComponent);
+        this.server = new ServerStatus(options, verifyTls, gate, radar, background, log, url -> Link.browse(url, log),
+                System::nanoTime);
+        this.export = new ExportActions(model, store, options, inScope, background, log, tell, t -> clipboard.accept(t),
+                dialogParent, api.userInterface()::applyThemeToComponent);
         this.scopeCheck = new ScopeCheckButton(options, store, queue, scopeHosts, server::limitsNow, background, log, tell, ask);
 
         setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
@@ -209,12 +234,12 @@ public final class RadarTab extends JPanel {
         add(south(), BorderLayout.SOUTH);
         buildRowMenu();
 
-        store.addListener(updates::mark);
+        store.addListener(rowUpdates::mark);
         scopeWatch = api.scope().registerScopeChangeHandler(e -> {
             scopeChanged.set(true);
-            updates.mark();
+            rowUpdates.mark();
         });
-        timer = new Timer(updates.periodMillis(), e -> tick());
+        timer = new Timer(rowUpdates.periodMillis(), e -> tick());
         flush();
         api.userInterface().applyThemeToComponent(this);
         api.userInterface().applyThemeToComponent(rowMenu);
@@ -222,11 +247,14 @@ public final class RadarTab extends JPanel {
     }
 
     private JPanel north() {
-        JLabel domainLabel = new JLabel("Domain");
         domainLabel.setLabelFor(domainField);
+        domainLabel.setDisplayedMnemonic(KeyEvent.VK_D);
         rescanBox.setToolTipText(RESCAN_TIP);
+        rescanBox.setMnemonic(KeyEvent.VK_R);
         findButton.setMnemonic(KeyEvent.VK_F);
+        findButton.setToolTipText(FIND_TIP);
         checkButton.setMnemonic(KeyEvent.VK_C);
+        checkButton.setToolTipText(CHECK_TIP);
         domainField.addActionListener(e -> submit(JobKind.FIND_AND_CHECK));
         checkButton.addActionListener(e -> submit(JobKind.FIND_AND_CHECK));
         findButton.addActionListener(e -> submit(JobKind.FIND_SUBDOMAINS));
@@ -239,17 +267,25 @@ public final class RadarTab extends JPanel {
         row.add(Box.createHorizontalStrut(12));
         row.add(scopeCheck.button);
         domainHint.setVisible(false);
-        domainHint.setBorder(BorderFactory.createEmptyBorder(0, 6, 0, 0));
+        hintButton.setVisible(false);
+        hintButton.addActionListener(e -> scanHintDomain());
+        JPanel hint = new JPanel(new BorderLayout(6, 0));
+        hint.setBorder(BorderFactory.createEmptyBorder(0, 6, 0, 0));
+        hint.add(domainHint, BorderLayout.CENTER);
+        hint.add(hintButton, BorderLayout.EAST);
         JPanel form = new JPanel(new BorderLayout(0, 4));
         form.add(row, BorderLayout.CENTER);
-        form.add(domainHint, BorderLayout.SOUTH);
+        form.add(hint, BorderLayout.SOUTH);
         jobsScroll.setBorder(BorderFactory.createTitledBorder("Jobs"));
         JPanel top = new JPanel(new BorderLayout(0, 6));
         top.add(notice(), BorderLayout.NORTH);
         top.add(form, BorderLayout.SOUTH);
         JPanel north = new JPanel(new BorderLayout(0, 6));
         north.add(top, BorderLayout.NORTH);
-        north.add(jobsScroll, BorderLayout.CENTER);
+        JPanel jobs = new JPanel(new BorderLayout(0, 4));
+        jobs.add(doneLine.panel, BorderLayout.NORTH);
+        jobs.add(jobsScroll, BorderLayout.CENTER);
+        north.add(jobs, BorderLayout.CENTER);
         return north;
     }
 
@@ -284,25 +320,32 @@ public final class RadarTab extends JPanel {
             summaryLabel.setText(model.summary());
             showScopeHint();
             showRest();
+            showEmptyState();
         });
         JPanel header = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         header.add(new JLabel("Results"));
         header.add(domainBox);
         header.add(summaryLabel);
-        JLabel show = new JLabel("Show");
-        show.setLabelFor(filterBox);
-        header.add(show);
+        showLabel.setLabelFor(filterBox);
+        showLabel.setDisplayedMnemonic(KeyEvent.VK_S);
+        header.add(showLabel);
         header.add(filterBox);
         header.add(export.button);
         cards.add(new JScrollPane(table), TABLE_CARD);
-        cards.add(emptyLabel, EMPTY_CARD);
+        showAllButton.addActionListener(e -> filterBox.setSelectedItem(ResultsFilter.ALL));
+        JPanel showAll = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        showAll.add(showAllButton);
+        emptyCard.add(emptyLabel, BorderLayout.NORTH);
+        emptyCard.add(showAll, BorderLayout.CENTER);
+        emptyCard.setBorder(BorderFactory.createEmptyBorder(24, 24, 24, 24));
+        cards.add(emptyCard, EMPTY_CARD);
         JPanel p = new JPanel(new BorderLayout(0, 4));
         p.add(header, BorderLayout.NORTH);
         p.add(cards, BorderLayout.CENTER);
         scopeHint.setVisible(false);
         restButton.addActionListener(e -> checkRest());
-        restPanel.add(restLabel);
-        restPanel.add(restButton);
+        restPanel.add(restLabel, BorderLayout.CENTER);
+        restPanel.add(restButton, BorderLayout.EAST);
         restPanel.setVisible(false);
         JPanel hints = new JPanel(new BorderLayout());
         hints.add(restPanel, BorderLayout.NORTH);
@@ -324,11 +367,10 @@ public final class RadarTab extends JPanel {
         if (rest.isEmpty()) {
             return;
         }
-        Options o = options.get();
-        if (o.offForProject()) {
-            message.accept(ServerLine.OFF_FOR_PROJECT.text());
+        if (sayIfPrivate()) {
             return;
         }
+        Options o = options.get();
         RestCheck r = rest.get();
         if (r.hosts().size() <= SendConfirm.QUIET_HOSTS) {
             queue.submit(JobKind.CHECK_HOSTS, null, r.hosts(), false);
@@ -362,11 +404,11 @@ public final class RadarTab extends JPanel {
     }
 
     private JPanel south() {
-        link.addActionListener(e -> background.execute(this::openSite));
+        link.setToolTipText(SITE);
+        link.addActionListener(e -> background.execute(() -> Link.browse(SITE_LINK, log)));
         // Burp takes one settings panel per extension, so this per-project switch sits here, kept in the project file.
         projectBox.setSelected(projectSwitch.off());
-        projectBox.setToolTipText(PRIVATE_TIP);
-        projectHelp.setToolTipText(PRIVATE_TIP);
+        showPrivateTip();
         projectBox.addActionListener(e -> {
             projectSwitch.set(projectBox.isSelected());
             if (projectBox.isSelected()) {
@@ -387,6 +429,10 @@ public final class RadarTab extends JPanel {
         JPanel line = new JPanel(new BorderLayout(6, 0));
         line.add(server.tryAgainButton, BorderLayout.WEST);
         line.add(server.label, BorderLayout.CENTER);
+        JPanel notes = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        notes.add(server.releaseLink);
+        notes.add(server.tlsWarning);
+        line.add(notes, BorderLayout.EAST);
         JPanel row = new JPanel(new BorderLayout(12, 0));
         row.add(line, BorderLayout.CENTER);
         JPanel project = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
@@ -493,21 +539,73 @@ public final class RadarTab extends JPanel {
         String raw = domainField.getText().trim();
         Optional<String> d = HostNames.domainInput(raw);
         // A line under the field, not a dialog: a typo is not worth a window.
-        boolean notADomain = d.isEmpty() && !raw.isEmpty();
-        domainHint.setText(notADomain ? NOT_A_DOMAIN : "");
-        domainHint.setVisible(notADomain);
-        if (d.isEmpty()) {
+        String problem = inputProblem(raw, d);
+        if (d.isEmpty() || !problem.isEmpty()) {
+            showHint(problem, null);
             domainField.requestFocusInWindow();
             return;
         }
-        domainField.setText(d.get());
+        String domain = d.get();
+        // A host is checked as typed; the line offers its domain instead.
+        String base = ParentDomains.base(domain);
+        boolean host = !base.equals(domain);
+        if (host) {
+            showHint(isHost(domain, base), base);
+        } else {
+            showHint("", null);
+        }
+        domainField.setText(domain);
+        Job job = queue.submit(kind, domain, List.of(), rescanBox.isSelected());
+        hintJob = host ? job : null;
+        hintKind = kind;
         // A click that joins an active job without a rescan leaves the box ticked: nothing was rescanned.
-        if (queue.submit(kind, d.get(), List.of(), rescanBox.isSelected()).rescan()) {
+        if (job.rescan()) {
             rescanBox.setSelected(false);
         }
-        model.setDomain(d.get());
+        model.setDomain(domain);
         refreshDomains(store.domains());
-        updates.mark();
+        jobUpdates.mark();
+    }
+
+    /** Why the typed text cannot be checked, or "" when it can (or nothing was typed). */
+    private String inputProblem(String raw, Optional<String> d) {
+        if (d.isEmpty()) {
+            return raw.isEmpty() ? "" : NOT_A_DOMAIN;
+        }
+        if (!HostNames.isPublic(d.get())) {
+            return internal(d.get());
+        }
+        if (options.get().offForProject()) {
+            return PRIVATE_HINT;
+        }
+        return "";
+    }
+
+    static String internal(String name) {
+        return name + " is an internal name; the server cannot check it.";
+    }
+
+    static String isHost(String host, String base) {
+        return host + " is a host. Scan " + base + " instead?";
+    }
+
+    /** The line under the field, with a link to the registrable domain when {@code base} is set. */
+    private void showHint(String text, String base) {
+        domainHint.setText(text);
+        domainHint.setVisible(!text.isEmpty());
+        hintButton.setText(base == null ? "" : "Scan " + base);
+        hintButton.setVisible(base != null);
+    }
+
+    /** Replaces the job of the host typed with one for its domain. */
+    private void scanHintDomain() {
+        String base = ParentDomains.base(domainField.getText().trim());
+        if (hintJob != null) {
+            queue.cancel(hintJob);
+            hintJob = null;
+        }
+        domainField.setText(base);
+        submit(hintKind);
     }
 
     /** Cmd on macOS, Ctrl elsewhere; Ctrl without a screen. */
@@ -547,21 +645,34 @@ public final class RadarTab extends JPanel {
     }
 
     private void checkHosts(List<String> hosts) {
-        if (confirm.allows(queue.toSend(hosts).size())) {
+        if (!sayIfPrivate() && confirm.allows(queue.toSend(hosts).size())) {
             queue.submit(JobKind.CHECK_HOSTS, null, hosts, false);
         }
     }
 
     private void checkAgain(List<String> hosts) {
-        if (confirm.allows(hosts.size())) {
+        if (!sayIfPrivate() && confirm.allows(hosts.size())) {
             queue.checkAgain(hosts);
         }
     }
 
+    /** A job in a private project would fail at once, so the user is told instead. */
+    private boolean sayIfPrivate() {
+        if (!options.get().offForProject()) {
+            return false;
+        }
+        message.accept(ServerLine.OFF_FOR_PROJECT.text());
+        return true;
+    }
+
+    /** One Burp call per host, so off the EDT; the scope column follows on the next tick. */
     private void addToScope() {
-        table.selectedHosts().forEach(h -> api.scope().includeInScope(IssuePlanner.baseUrl(h)));
-        model.forgetScope();
-        table.refreshKeepingSelection();
+        List<String> hosts = table.selectedHosts();
+        background.execute(() -> {
+            hosts.forEach(h -> api.scope().includeInScope(IssuePlanner.baseUrl(h)));
+            scopeChanged.set(true);
+            rowUpdates.mark();
+        });
     }
 
     private void addSelectedToSiteMap(List<String> hosts) {
@@ -588,7 +699,7 @@ public final class RadarTab extends JPanel {
 
     /** Called by the job queue from any thread. */
     public void jobsChanged() {
-        updates.mark();
+        jobUpdates.mark();
     }
 
     /** Extension unload: stops the timer and the scope watch. */
@@ -612,30 +723,79 @@ public final class RadarTab extends JPanel {
     /** A hidden tab does no work: changes wait for the first tick after it is shown again. */
     void tick() {
         if (shown.getAsBoolean()) {
-            updates.tick();
+            rowUpdates.tick();
+            jobUpdates.tick();
             server.watch();
+            showPrivateTip();
         }
     }
 
     /** Applies every change since the last flush; runs on the EDT. */
     void flush() {
+        flushJobs();
+        flushRows();
+    }
+
+    private void flushJobs() {
+        List<Job> jobs = queue.jobs();
+        jobsPanel.show(jobs);
+        doneLine.show(jobs, store::domain);
+        jobsScroll.setVisible(jobsPanel.hasJobs());
+        showEmptyState();
+    }
+
+    /** The table's model change shows the empty state, if any. */
+    private void flushRows() {
         if (scopeChanged.getAndSet(false)) {
             model.forgetScope();
         }
-        List<Job> jobs = queue.jobs();
-        jobsPanel.show(jobs);
-        jobsScroll.setVisible(jobsPanel.hasJobs());
-        emptyLabel.setText(emptyText(jobs));
         List<String> stored = store.domains();
+        anyStored = !stored.isEmpty();
         refreshDomains(stored);
         table.refreshKeepingSelection();
-        cardLayout.show(cards, stored.isEmpty() ? EMPTY_CARD : TABLE_CARD);
-        revalidate();
     }
 
-    /** What the empty table says: results are on the way while a job is active. */
-    static String emptyText(List<Job> jobs) {
-        return jobs.stream().anyMatch(j -> !j.state().finished()) ? WORKING : EMPTY;
+    /** The table, or what its place says when it has no rows to show. */
+    private void showEmptyState() {
+        int total = model.getRowCount() > 0 || model.domain() == null ? 0 : store.domain(model.domain()).size();
+        boolean working = queue.jobs().stream().anyMatch(j -> !j.state().finished());
+        String text = emptyText(model.domain(), model.filter(), model.getRowCount(), total, anyStored, working);
+        if (text != null) {
+            emptyLabel.setText(text);
+            showAllButton.setVisible(total > 0);
+        }
+        cardLayout.show(cards, text == null ? TABLE_CARD : EMPTY_CARD);
+    }
+
+    /** Null while rows are shown; otherwise why there are none: the filter, a job on its way, or nothing done yet. */
+    static String emptyText(String domain, ResultsFilter filter, int shown, int total, boolean anyStored, boolean working) {
+        if (shown > 0) {
+            return null;
+        }
+        if (total > 0) {
+            return "No hosts match \"" + filter + "\". " + StatusText.count(total, "host") + " in total.";
+        }
+        if (working) {
+            return domain == null ? WORKING : "Results for " + domain + " appear here as hosts are checked.";
+        }
+        return anyStored && domain != null ? "No results for " + domain + "." : EMPTY;
+    }
+
+    static String privateTip(String serverHost) {
+        return "For engagements where host names must not leave Burp. While ticked, this project sends nothing to "
+                + (serverHost == null ? "the radar server" : serverHost) + ": no checks, no subdomain search, no traffic checks. "
+                + "Results already here stay. Other projects are not affected.";
+    }
+
+    /** The Private project tip names the server of the current Server URL. */
+    private void showPrivateTip() {
+        String host = options.get().serverHost();
+        if (!Objects.equals(host, tipHost)) {
+            tipHost = host;
+            String tip = privateTip(host);
+            projectBox.setToolTipText(tip);
+            projectHelp.setToolTipText(tip);
+        }
     }
 
     /** The chooser lists the stored domains, plus the one on screen while its first rows are on the way. */
@@ -664,19 +824,6 @@ public final class RadarTab extends JPanel {
         }
     }
 
-    private void openSite() {
-        try {
-            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                Desktop.getDesktop().browse(URI.create(SITE));
-                return;
-            }
-        } catch (IOException | RuntimeException e) {
-            log.error("Hirdman Radar: cannot open " + SITE + ": " + e);
-            return;
-        }
-        log.error("Hirdman Radar: no browser to open here. The site is " + SITE);
-    }
-
     private static void inBackground(Runnable r) {
         Thread t = new Thread(r, "hirdman-radar-ui");
         t.setDaemon(true);
@@ -697,26 +844,6 @@ public final class RadarTab extends JPanel {
         }
     }
 
-    /** A focusable text link in the theme's secondary colour, or its main one when the secondary reads poorly. */
-    private static final class Link extends JButton {
-
-        Link(String text) {
-            super(text);
-            putClientProperty("html.disable", Boolean.TRUE);
-            setBorderPainted(false);
-            setContentAreaFilled(false);
-            setMargin(new Insets(0, 0, 0, 0));
-            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            setToolTipText(SITE);
-        }
-
-        @Override
-        public void updateUI() {
-            super.updateUI();
-            secondary(this);
-        }
-    }
-
     /** The plugin version beside the site link, small and in the same colour. */
     private static final class Note extends JLabel {
 
@@ -729,17 +856,7 @@ public final class RadarTab extends JPanel {
         @Override
         public void updateUI() {
             super.updateUI();
-            secondary(this);
-        }
-    }
-
-    /** One size smaller, in the theme's secondary colour or its main one when the secondary reads poorly. */
-    private static void secondary(JComponent c) {
-        c.setForeground(RiskColors.readable(UIManager.getColor("Label.disabledForeground"), UIManager.getColor("Label.foreground"),
-                UIManager.getColor("Panel.background")));
-        Font f = UIManager.getFont("Label.font");
-        if (f != null) {
-            c.setFont(f.deriveFont(f.getSize2D() - 1f));
+            Link.secondary(this);
         }
     }
 }

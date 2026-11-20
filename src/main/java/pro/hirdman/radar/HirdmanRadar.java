@@ -5,12 +5,14 @@ import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.BurpSuiteEdition;
 import burp.api.montoya.logging.Logging;
 import burp.api.montoya.scanner.scancheck.ScanCheckType;
+import java.awt.Component;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
+import javax.swing.Timer;
 import pro.hirdman.radar.api.ConnectionSettings;
 import pro.hirdman.radar.api.Radar;
 import pro.hirdman.radar.api.RadarClient;
@@ -103,11 +105,15 @@ public final class HirdmanRadar implements BurpExtension {
             }
         });
 
+        // Dialogs open over Burp's main window (BApp Store rule), wherever the user is.
+        Supplier<Component> suiteFrame = () -> api.userInterface().swingUtils().suiteFrame();
         RadarTab tab = Edt.call(() -> new RadarTab(api, store, queue, gate, settings::snapshot, projectSwitch, radar,
-                createIssues, siteMap::addSelected, () -> BurpSiteMap.inScopeHosts(api.siteMap(), api.scope()::isInScope)));
+                createIssues, siteMap::addSelected, () -> BurpSiteMap.inScopeHosts(api.siteMap(), api.scope()::isInScope),
+                settings::verifyTls, suiteFrame));
         tabRef.set(tab);
         api.userInterface().registerSuiteTab("Hirdman Radar", tab);
-        api.userInterface().registerContextMenuItemsProvider(new RadarMenu(queue, tab, tab::reveal));
+        api.userInterface().registerContextMenuItemsProvider(new RadarMenu(queue, tab, suiteFrame, projectSwitch::off,
+                tab::reveal));
         api.userInterface().registerHttpRequestEditorProvider(context -> new RadarEditor(store,
                 host -> queue.checkAgain(List.of(host)), host -> RadarMenu.show(tab, tab::reveal, List.of(host)), projectSwitch::off,
                 url -> Browser.open(url, log::logToError), api.userInterface()::applyThemeToComponent));
@@ -149,7 +155,7 @@ public final class HirdmanRadar implements BurpExtension {
         store.addCheckListener(auto);
         store.addLoginListener(auto);
         api.scope().registerScopeChangeHandler(new ScopeIssues(store::all, () -> settings.snapshot().autoIssues(),
-                issues::reportAll, burpThread, log::logToError));
+                issues::reportAll, burpThread, log::logToError, HirdmanRadar::later));
         api.scanner().registerPassiveScanCheck(new RadarScanCheck(store::host, issues::forScan, log::logToError),
                 ScanCheckType.PER_HOST);
         return issues::reportAgain;
@@ -161,6 +167,13 @@ public final class HirdmanRadar implements BurpExtension {
             log.raiseInfoEvent(NO_ISSUES);
             return 0;
         };
+    }
+
+    /** Runs {@code task} once after {@code delay} on a Swing timer, which needs no thread of its own. */
+    static void later(Runnable task, Duration delay) {
+        Timer t = new Timer((int) delay.toMillis(), e -> task.run());
+        t.setRepeats(false);
+        t.start();
     }
 
     /** What is left of the unload budget ending at {@code end}, at most {@code max}. */

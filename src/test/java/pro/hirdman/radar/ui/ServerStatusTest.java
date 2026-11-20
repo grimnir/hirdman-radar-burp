@@ -35,9 +35,13 @@ class ServerStatusTest {
         return status(Runnable::run);
     }
 
+    final java.util.concurrent.atomic.AtomicLong now = new java.util.concurrent.atomic.AtomicLong();
+    final java.util.concurrent.atomic.AtomicBoolean verifyTls = new java.util.concurrent.atomic.AtomicBoolean(true);
+    final List<String> opened = new ArrayList<>();
+
     ServerStatus status(Executor background) {
         if (status == null) {
-            status = new ServerStatus(options::get, gate, () -> radar, background, log);
+            status = new ServerStatus(options::get, verifyTls::get, gate, () -> radar, background, log, opened::add, now::get);
         }
         return status;
     }
@@ -84,7 +88,8 @@ class ServerStatusTest {
         radar.answer.set(new IllegalStateException("boom"));
         status().check();
         drainEdt();
-        assertEquals("Server check failed: unexpected error. Details are in the extension's Errors tab.", status().label.getText());
+        assertEquals("Could not check the radar server: unexpected error. Details are in the extension's Errors tab.",
+                status().label.getText());
         assertTrue(status().tryAgainButton.isVisible());
         assertEquals(List.of("Hirdman Radar: server check failed"), log.errors);
     }
@@ -94,7 +99,7 @@ class ServerStatusTest {
         radar.answer.set(ApiException.malformed("no limits in /meta", null));
         status().check();
         drainEdt();
-        assertEquals("Server check failed: unexpected answer.", status().label.getText());
+        assertEquals("The radar server sent an unexpected answer.", status().label.getText());
         assertEquals(1, log.errors.size(), log.errors.toString());
         assertTrue(log.errors.get(0).startsWith("Hirdman Radar: server check failed: "), log.errors.get(0));
         assertTrue(log.errors.get(0).contains("no limits in /meta"), log.errors.get(0));
@@ -119,7 +124,8 @@ class ServerStatusTest {
         status().check();
         drainEdt();
         assertEquals(OFF_LINE, status().label.getText());
-        assertTrue(status().tryAgainButton.isVisible());
+        // Trying again would give the same line.
+        assertFalse(status().tryAgainButton.isVisible());
         assertEquals(0, radar.metaCalls.get());
     }
 
@@ -147,16 +153,71 @@ class ServerStatusTest {
     }
 
     @Test
-    void serverUrlChangeAsksAgain() throws Exception {
+    void serverUrlChangeAsksAgainOnceTheUrlStopsChanging() throws Exception {
         status().watch();
         drainEdt();
         assertEquals(1, radar.metaCalls.get());
         status().watch();
         assertEquals(1, radar.metaCalls.get());
-        options.set(new Options("https://other.example", true, false, Risk.LOW, true, false, true, 5, false));
+        // Typing a URL changes it on every key: only the one that stays a second is asked.
+        for (String url : List.of("https://o", "https://ot", "https://other.example")) {
+            options.set(new Options(url, true, false, Risk.LOW, true, false, true, 5, false));
+            now.addAndGet(300_000_000L);
+            status().watch();
+        }
+        now.addAndGet(900_000_000L);
+        status().watch();
+        assertEquals(1, radar.metaCalls.get());
+        now.addAndGet(200_000_000L);
         status().watch();
         drainEdt();
         assertEquals(2, radar.metaCalls.get());
+        now.addAndGet(5_000_000_000L);
+        status().watch();
+        assertEquals(2, radar.metaCalls.get());
+    }
+
+    @Test
+    void anAnswerForAnEarlierServerUrlLeavesTheLine() throws Exception {
+        status().check();
+        drainEdt();
+        options.set(new Options("https://other.example", true, false, Risk.LOW, true, false, true, 5, false));
+        status.label.setText("asking");
+        gate.passed(java.net.URI.create("https://scan.hirdman.pro"), META);
+        drainEdt();
+        assertEquals("asking", status.label.getText());
+        gate.passed(java.net.URI.create("https://other.example"), META);
+        drainEdt();
+        assertEquals("Server: other.example. " + LIMITS, status.label.getText());
+    }
+
+    @Test
+    void tlsVerificationTurnedOffIsShown() throws Exception {
+        status().watch();
+        assertFalse(status.tlsWarning.isVisible());
+        verifyTls.set(false);
+        status.watch();
+        assertTrue(status.tlsWarning.isVisible());
+        assertEquals("TLS verification is off", status.tlsWarning.getText());
+        assertTrue(status.tlsWarning.getFont().isBold());
+        verifyTls.set(true);
+        status.watch();
+        assertFalse(status.tlsWarning.isVisible());
+    }
+
+    @Test
+    void aNewerReleaseLinkOpensItsPage() throws Exception {
+        radar.answer.set(new Meta(1, "0.1.0", "anonymous", META.limits(), META.notes(), "99.0.0", "https://example.org/r"));
+        status().check();
+        drainEdt();
+        assertTrue(status.releaseLink.isVisible());
+        assertEquals("Hirdman Radar 99.0.0 is available", status.releaseLink.getText());
+        status.releaseLink.doClick(0);
+        assertEquals(List.of("https://example.org/r"), opened);
+        radar.answer.set(META);
+        status.check();
+        drainEdt();
+        assertFalse(status.releaseLink.isVisible());
     }
 
     @Test

@@ -656,10 +656,11 @@ class JobRunnerTest {
     @Test
     void jobCancelledAtTheEndAsksNoRecheck() {
         radar.polls.add(page(3, true, rootCheck("example.com"), check("x.example.com", false), done(1, 1)));
-        // Cancels on the status update after the last page, before the run reaches its end.
-        Job j = new Job(JobKind.FIND_AND_CHECK, "example.com", List.of(), false, false, job -> {
-            if (job.state() == JobState.RUNNING && !store.all().isEmpty()) {
-                job.markCancelled(false);
+        // Cancels once the last page's checks are in, before the run reaches its end.
+        Job j = new Job(JobKind.FIND_AND_CHECK, "example.com", List.of(), false, false, job -> { });
+        store.addCheckListener(row -> {
+            if (row.host().equals("x.example.com")) {
+                j.markCancelled(false);
             }
         });
         assertEquals(List.of(), run(j));

@@ -31,7 +31,7 @@ class ExportActionsTest {
     final List<String> said = new ArrayList<>();
     final List<String> copied = new ArrayList<>();
     final ExportActions actions = new ExportActions(model, store, Options::defaults, scope::contains, Runnable::run, log,
-            said::add, copied::add, new JPanel(), c -> { });
+            said::add, copied::add, JPanel::new, c -> { });
 
     void checked(String host, String severity) {
         List<Finding> f = severity == null ? List.of() : List.of(new Finding("k", severity, "tentative", "Leak", "", "", ""));
@@ -53,7 +53,8 @@ class ExportActionsTest {
 
     @Test
     void theMenuOffersJsonCsvAndTheSummary() {
-        assertEquals("Export", actions.button.getText());
+        assertEquals("Export \u25BE", actions.button.getText());
+        assertEquals(java.awt.event.KeyEvent.VK_E, actions.button.getMnemonic());
         List<String> items = new ArrayList<>();
         for (Component c : actions.menu.getComponents()) {
             if (c instanceof JMenuItem i) {

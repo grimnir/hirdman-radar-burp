@@ -28,14 +28,56 @@ class ServerLineTest {
     @Test
     void olderPluginIsTold() {
         ServerLine l = ServerLine.passed(meta("0.2.0", 300, "x"), "0.1.0");
-        assertEquals("This plugin is older than the server expects (0.2.0). Update it from the BApp Store.", l.text());
+        assertEquals("This plugin is older than the server expects (0.2.0). Download the new version from the releases page "
+                + "or the BApp Store.", l.text());
         assertFalse(l.tryAgain());
+        assertEquals("Releases page", l.linkText());
+        assertEquals(ServerLine.RELEASES, l.linkUrl());
+        assertEquals("https://github.com/grimnir/hirdman-radar-burp/releases/latest", ServerLine.RELEASES);
+    }
+
+    static Meta release(String latest, String url, String announcement) {
+        return new Meta(1, "0.1.0", "anonymous", new Meta.Limits(50, 1.5, 0), new Meta.Notes("db", "cov", "c", announcement),
+                latest, url);
+    }
+
+    @Test
+    void aNewerReleaseIsOfferedQuietly() {
+        ServerLine l = ServerLine.passed(release("0.2.0", "https://example.org/r", null), "0.1.0");
+        assertEquals("", l.text());
+        assertEquals("Hirdman Radar 0.2.0 is available", l.linkText());
+        assertEquals("https://example.org/r", l.linkUrl());
+        assertEquals(ServerLine.RELEASES, ServerLine.passed(release("0.2.0", null, null), "0.1.0").linkUrl());
+        // Only an https page opens in the browser.
+        assertEquals(ServerLine.RELEASES, ServerLine.passed(release("0.2.0", "javascript:alert(1)", null), "0.1.0").linkUrl());
+        assertEquals(ServerLine.RELEASES, ServerLine.passed(release("0.2.0", "http://example.org/r", null), "0.1.0").linkUrl());
+        assertEquals("https://hirdman.pro/radar?utm_source=burp&utm_medium=plugin&utm_content=footer",
+                ServerLine.passed(release("0.2.0", "https://hirdman.pro/radar", null), "0.1.0").linkUrl());
+        for (String same : new String[] {"0.1.0", "0.0.9", null, "x"}) {
+            ServerLine none = ServerLine.passed(release(same, "https://example.org/r", null), "0.1.0");
+            assertEquals(null, none.linkText(), same);
+            assertEquals(null, none.linkUrl(), same);
+        }
+    }
+
+    @Test
+    void theAnnouncementIsOneLineAfterTheLimits() {
+        ServerLine l = ServerLine.passed(new Meta(1, null, "anonymous", new Meta.Limits(50, 1.5, 300),
+                new Meta.Notes("db", "cov", "c", "Maintenance\non Sunday."), null, null), "0.1.0");
+        assertTrue(l.text().endsWith(" Maintenance on Sunday."), l.text());
+        assertEquals("", ServerLine.passed(release(null, null, " "), "0.1.0").text());
+    }
+
+    @Test
+    void anotherServerIsNamed() {
+        assertEquals("Server: radar.example.org.", ServerLine.passed(release(null, null, null), "0.1.0", "radar.example.org").text());
+        assertEquals("", ServerLine.passed(release(null, null, null), "0.1.0", "scan.hirdman.pro").text());
     }
 
     @Test
     void serverVersionTextIsOneShortLine() {
         String l = ServerLine.passed(meta("9.\n9.9-" + "x".repeat(100), 300, "x"), "0.1.0").text();
-        assertEquals("This plugin is older than the server expects (9. 9.9-" + "x".repeat(13) + "). Update it from the BApp Store.", l);
+        assertTrue(l.startsWith("This plugin is older than the server expects (9. 9.9-" + "x".repeat(13) + "). Download"), l);
     }
 
     @Test
@@ -49,9 +91,9 @@ class ServerLineTest {
     @Test
     void otherFailuresNameTheStatus() {
         ServerLine http = ServerLine.failed(ApiException.http(new Reply(502, Map.of(), "")), "h");
-        assertEquals("Server check failed: HTTP 502.", http.text());
+        assertEquals("Cannot connect to the radar server: HTTP 502.", http.text());
         assertTrue(http.tryAgain());
-        assertEquals("Server check failed: unexpected answer.",
+        assertEquals("The radar server sent an unexpected answer.",
                 ServerLine.failed(ApiException.malformed("bad", null), "h").text());
     }
 

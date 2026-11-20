@@ -1,6 +1,7 @@
 package pro.hirdman.radar.ui;
 
 import java.awt.Component;
+import java.awt.event.KeyEvent;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -35,7 +36,8 @@ final class ExportActions {
 
     static final String EXPORT_FAILED = "Could not save the export. Details are in the extension's Errors tab.";
 
-    final JButton button = new JButton("Export");
+    /** The arrow says the button opens a menu. */
+    final JButton button = new JButton("Export \u25BE");
     final JPopupMenu menu = new JPopupMenu();
     /** Asks where to save the export; tests replace it. */
     Function<String, Optional<Path>> saveDialog = this::chooseFile;
@@ -48,15 +50,15 @@ final class ExportActions {
     private final TabLog log;
     private final Consumer<String> message;
     private final Consumer<String> clipboard;
-    private final Component parent;
+    private final Supplier<Component> parent;
     private final Consumer<Component> theme;
 
     /**
      * {@code inScope} asks Burp's scope about a host; {@code message} and {@code clipboard} tell the user and copy text;
-     * {@code parent} and {@code theme} place and style the file chooser.
+     * {@code parent} gives the window the file chooser opens over, {@code theme} styles it.
      */
     ExportActions(ResultsTableModel model, ResultStore store, Supplier<Options> options, Predicate<String> inScope,
-            Executor background, TabLog log, Consumer<String> message, Consumer<String> clipboard, Component parent,
+            Executor background, TabLog log, Consumer<String> message, Consumer<String> clipboard, Supplier<Component> parent,
             Consumer<Component> theme) {
         this.model = model;
         this.store = store;
@@ -82,6 +84,7 @@ final class ExportActions {
         menu.add(csv);
         menu.addSeparator();
         menu.add(summary);
+        button.setMnemonic(KeyEvent.VK_E);
         button.addActionListener(e -> menu.show(button, 0, button.getHeight()));
     }
 
@@ -139,7 +142,7 @@ final class ExportActions {
         chooser.setDialogTitle("Export results");
         chooser.setSelectedFile(new File(name));
         theme.accept(chooser);
-        return chooser.showSaveDialog(parent) == JFileChooser.APPROVE_OPTION ? Optional.of(chooser.getSelectedFile().toPath())
+        return chooser.showSaveDialog(parent.get()) == JFileChooser.APPROVE_OPTION ? Optional.of(chooser.getSelectedFile().toPath())
                 : Optional.empty();
     }
 }
