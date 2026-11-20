@@ -16,13 +16,15 @@ import pro.hirdman.radar.model.Risk;
 class IssuePlannerTest {
 
     static final IssueOptions DEFAULTS = new IssueOptions(true, false, Risk.LOW, null);
-    static final String STEALER = "Infostealer records linked to host";
-    static final String WORK = "Work accounts in leaks";
+    static final String STEALER = "stealer_logs";
+    static final String WORK = "work_accounts";
+    static final String STEALER_NAME = "Host found in infostealer logs";
+    static final String WORK_NAME = "Work email addresses found in breaches";
     /** Issue names say where they came from, in Burp and in its reports. */
     static final String P = "Hirdman Radar: ";
 
-    static Finding f(String name, String severity) {
-        return new Finding("stealer", severity, "tentative", name, "<p>Found <b>3</b> records.</p>", "<p>Why.</p>", "<p>Fix.</p>");
+    static Finding f(String kind, String severity) {
+        return new Finding(kind, severity, "tentative", "Server name", "<p>Found <b>3</b> records.</p>", "<p>Why.</p>", "<p>Fix.</p>");
     }
 
     static final Instant CHECKED_AT = Instant.parse("2026-11-17T20:15:00Z");
@@ -65,11 +67,11 @@ class IssuePlannerTest {
     void checkedHostGetsOneIssuePerFinding() {
         List<IssueSpec> specs = plan(row(HostStatus.CHECKED, f(STEALER, "high"), f(WORK, "medium")));
         assertEquals(2, specs.size());
-        assertEquals(new IssueSpec(P + STEALER, "<p>Found <b>3</b> records.</p>" + CHECKED, "<p>Fix.</p>", "https://vpn.example.com/", "high",
+        assertEquals(new IssueSpec(P + STEALER_NAME, "<p>Found <b>3</b> records.</p>" + CHECKED, "<p>Fix.</p>", "https://vpn.example.com/", "high",
                 "tentative", "<p>Why.</p>"), specs.get(0));
-        assertEquals(P + WORK, specs.get(1).name());
-        assertEquals("medium", specs.get(1).severity());
-        assertEquals(P + STEALER + "|https://vpn.example.com/", specs.get(0).key());
+        assertEquals(P + WORK_NAME, specs.get(1).name());
+        assertEquals("high", specs.get(1).severity());
+        assertEquals(P + STEALER_NAME + "|https://vpn.example.com/", specs.get(0).key());
     }
 
     @Test
@@ -79,7 +81,7 @@ class IssuePlannerTest {
         String url = "https://scan.hirdman.pro/?domain=example.com";
         assertEquals("<p>Found <b>3</b> records.</p><p>Checked by Hirdman Radar on 2026-11-17 (UTC). Latest scan of example.com"
                 + " and its subdomains: <a href=\"" + url + "\">" + url + "</a>. Its counts can differ from this issue.</p>", s.detail());
-        assertEquals(P + STEALER + "|https://vpn.example.com/", s.key());
+        assertEquals(P + STEALER_NAME + "|https://vpn.example.com/", s.key());
     }
 
     @Test
@@ -165,16 +167,16 @@ class IssuePlannerTest {
 
     @Test
     void lowestSeverityFilters() {
-        HostResult r = row(HostStatus.CHECKED, f(STEALER, "high"), f(WORK, "medium"), f("Low one", "low"));
+        HostResult r = row(HostStatus.CHECKED, f(STEALER, "high"), f(WORK, "medium"), f("breached_db_records", "low"));
         List<IssueSpec> specs = IssuePlanner.plan(r, true, new IssueOptions(true, false, Risk.MEDIUM, null), Set.of());
-        assertEquals(List.of(P + STEALER, P + WORK), specs.stream().map(IssueSpec::name).toList());
+        assertEquals(List.of(P + STEALER_NAME, P + WORK_NAME), specs.stream().map(IssueSpec::name).toList());
     }
 
     @Test
     void skipsAlreadyReported() {
         HostResult r = row(HostStatus.CHECKED, f(STEALER, "high"), f(WORK, "medium"));
-        List<IssueSpec> specs = IssuePlanner.plan(r, true, DEFAULTS, Set.of(P + STEALER + "|https://vpn.example.com/"));
-        assertEquals(List.of(P + WORK), specs.stream().map(IssueSpec::name).toList());
+        List<IssueSpec> specs = IssuePlanner.plan(r, true, DEFAULTS, Set.of(P + STEALER_NAME + "|https://vpn.example.com/"));
+        assertEquals(List.of(P + WORK_NAME), specs.stream().map(IssueSpec::name).toList());
     }
 
     @Test
@@ -183,28 +185,23 @@ class IssuePlannerTest {
     }
 
     @Test
-    void severityAndConfidenceAreBurpValues() {
-        Finding odd = new Finding("x", "HIGH", "Firm", "A", "", "", "");
-        Finding unknown = new Finding("x", "high", "sure", "B", null, null, null);
-        List<IssueSpec> specs = plan(row(HostStatus.CHECKED, odd, unknown));
-        assertEquals("high", specs.get(0).severity());
-        assertEquals("firm", specs.get(0).confidence());
-        assertEquals("tentative", specs.get(1).confidence());
-        assertEquals(CHECKED, specs.get(1).detail());
+    void severityConfidenceAndNameComeFromTheKind() {
+        // A fake server cannot raise an issue's severity or confidence, nor give it a name of its own.
+        List<IssueSpec> specs = plan(row(HostStatus.CHECKED, new Finding("stealer_logs", "low", "certain", "<b>RCE</b>", "", "", ""),
+                new Finding("work_accounts", "info", "firm", "x", "", "", ""),
+                new Finding("personal_accounts", "high", "certain", "x", "", "", ""),
+                new Finding("breached_db_records", "high", "certain", "x", "", "", "")));
+        assertEquals(List.of(P + STEALER_NAME, P + WORK_NAME, P + "Credentials for host found in breaches",
+                P + "Host found in breached databases"), specs.stream().map(IssueSpec::name).toList());
+        assertEquals(List.of("high", "high", "medium", "low"), specs.stream().map(IssueSpec::severity).toList());
+        assertTrue(specs.stream().allMatch(s -> s.confidence().equals("tentative")));
+        assertEquals(CHECKED, specs.get(0).detail());
     }
 
     @Test
-    void nameIsOneLine() {
-        assertEquals(P + "Infostealer records", plan(row(HostStatus.CHECKED, f("Infostealer\n  records‮", "high"))).get(0).name());
-        assertTrue(plan(row(HostStatus.CHECKED, f(" \n", "high"), f(null, "high"))).isEmpty());
-    }
-
-    @Test
-    void nameHasNoAngleBrackets() {
-        // Burp shows the name in its own panes, where html.disable cannot be set.
-        assertEquals(P + "htmlimg src=x Work accounts",
-                plan(row(HostStatus.CHECKED, f("<html><img src=x> Work accounts", "high"))).get(0).name());
-        assertTrue(plan(row(HostStatus.CHECKED, f("<>", "high"))).isEmpty());
+    void unknownKindsAreSkipped() {
+        HostResult r = row(HostStatus.CHECKED, f("remote_code_execution", "high"), f(null, "high"), f("STEALER_LOGS", "high"));
+        assertTrue(IssuePlanner.plan(r, true, new IssueOptions(true, true, Risk.NONE, null), Set.of()).isEmpty());
     }
 
     @Test
@@ -258,18 +255,11 @@ class IssuePlannerTest {
 
     @Test
     void everyHtmlFieldIsCleaned() {
-        Finding bad = new Finding("x", "high", "tentative", "A", "<script>d</script>", "<img src=x>", "<a href=y>r</a>");
+        Finding bad = new Finding(STEALER, "high", "tentative", "A", "<script>d</script>", "<img src=x>", "<a href=y>r</a>");
         IssueSpec spec = plan(row(HostStatus.CHECKED, bad)).get(0);
         assertEquals("&lt;script&gt;d&lt;/script&gt;" + CHECKED, spec.detail());
         assertEquals("&lt;img src=x&gt;", spec.background());
         assertEquals("&lt;a href=y&gt;r&lt;/a&gt;", spec.remediation());
-    }
-
-    @Test
-    void unknownSeverityIsInformationWhenEverythingIsReported() {
-        HostResult r = row(HostStatus.CHECKED, f(STEALER, "info"));
-        assertTrue(plan(r).isEmpty());
-        assertEquals("information", IssuePlanner.plan(r, true, new IssueOptions(true, false, Risk.NONE, null), Set.of()).get(0).severity());
     }
 
     @Test

@@ -26,8 +26,9 @@ import pro.hirdman.radar.model.Risk;
 
 class BurpIssuesTest {
 
-    static final String STEALER = "Infostealer records linked to host";
-    static final String WORK = "Work accounts in leaks";
+    // Issue names come from the finding kind.
+    static final String STEALER = "Host found in infostealer logs";
+    static final String WORK = "Work email addresses found in breaches";
     static final String P = "Hirdman Radar: ";
 
     final List<String> calls = new CopyOnWriteArrayList<>();
@@ -86,7 +87,7 @@ class BurpIssuesTest {
 
     static HostResult row(String host, HostStatus status, String... names) {
         List<Finding> findings = List.of(names).stream()
-                .map(n -> new Finding("stealer", "high", "tentative", n, "<p>d</p>", "<p>b</p>", "<p>r</p>")).toList();
+                .map(n -> new Finding(n.equals(WORK) ? "work_accounts" : "stealer_logs", "high", "tentative", n, "<p>d</p>", "<p>b</p>", "<p>r</p>")).toList();
         return new HostResult(host, "example.com", status, 3, 0, 0, 0, findings, Instant.EPOCH);
     }
 

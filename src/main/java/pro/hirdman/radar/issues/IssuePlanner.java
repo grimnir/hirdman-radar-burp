@@ -8,12 +8,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import pro.hirdman.radar.api.Json;
 import pro.hirdman.radar.api.ServerEvent.Finding;
 import pro.hirdman.radar.model.HostNames;
 import pro.hirdman.radar.model.HostResult;
@@ -24,7 +23,16 @@ import pro.hirdman.radar.model.Risk;
 /** Which Burp issues a host row gets. The auto option is the caller's: manual creation uses the same plan. */
 public final class IssuePlanner {
 
-    private static final Set<String> CONFIDENCE = Set.of("certain", "firm", "tentative");
+    /** Finding kinds of the server contract, with the plugin's own name and severity; other kinds get no issue. */
+    private record Kind(String name, Risk risk) {
+    }
+
+    // Names as the server wrote them so far: Burp has no update, a new name would add a second issue for the same host.
+    private static final Map<String, Kind> KINDS = Map.of(
+            "stealer_logs", new Kind("Host found in infostealer logs", Risk.HIGH),
+            "work_accounts", new Kind("Work email addresses found in breaches", Risk.HIGH),
+            "personal_accounts", new Kind("Credentials for host found in breaches", Risk.MEDIUM),
+            "breached_db_records", new Kind("Host found in breached databases", Risk.LOW));
     /** What ConnectionSettings produces; anything else gets no link, so nothing odd reaches the issue HTML. */
     private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC);
     private static final Pattern SITE = Pattern.compile("https?://[a-z0-9.\\-\\[\\]:]+");
@@ -54,21 +62,22 @@ public final class IssuePlanner {
         Set<String> seen = new HashSet<>();
         List<IssueSpec> out = new ArrayList<>();
         for (Finding f : r.findings()) {
-            // Burp shows names in its own panes, where html.disable cannot be set.
-            String name = f.name() == null ? "" : Json.oneLine(f.name()).replace("<", "").replace(">", "");
-            if (name.isEmpty() || Risk.ofSeverity(f.severity()).compareTo(o.lowest()) < 0) {
+            Kind kind = f.kind() == null ? null : KINDS.get(f.kind());
+            if (kind == null || kind.risk().compareTo(o.lowest()) < 0) {
                 continue;
             }
             // Checked before the HTML is cleaned: a scope pass meets mostly issues that already exist.
-            String key = IssueSpec.key(PREFIX + name, baseUrl);
+            String key = IssueSpec.key(PREFIX + kind.name(), baseUrl);
             if (alreadyReported.contains(key) || !seen.add(key)) {
                 continue;
             }
             if (link == null) {
                 link = sourcesLine(r) + checkedLine(r, o.site());
             }
-            out.add(new IssueSpec(PREFIX + name, IssueHtml.clean(f.detail(), server) + link, IssueHtml.clean(f.remediation(), server),
-                    baseUrl, severity(f.severity()), confidence(f.confidence()), IssueHtml.clean(f.background(), server)));
+            // Every finding is tentative: the records are not verified.
+            out.add(new IssueSpec(PREFIX + kind.name(), IssueHtml.clean(f.detail(), server) + link,
+                    IssueHtml.clean(f.remediation(), server), baseUrl, severity(kind.risk()), "tentative",
+                    IssueHtml.clean(f.background(), server)));
         }
         LoginPage login = r.login();
         if (login != null && Risk.LOW.compareTo(o.lowest()) >= 0 && !alreadyReported.contains(IssueSpec.key(PREFIX + LOGIN, baseUrl))) {
@@ -126,17 +135,12 @@ public final class IssuePlanner {
         return parts.isEmpty() ? "" : "<p>" + String.join(" ", parts) + "</p>";
     }
 
-    private static String severity(String s) {
-        return switch (Risk.ofSeverity(s)) {
+    private static String severity(Risk risk) {
+        return switch (risk) {
             case HIGH -> "high";
             case MEDIUM -> "medium";
             case LOW -> "low";
             case NONE -> "information";
         };
-    }
-
-    private static String confidence(String s) {
-        String c = s == null ? "" : s.toLowerCase(Locale.ROOT);
-        return CONFIDENCE.contains(c) ? c : "tentative";
     }
 }
