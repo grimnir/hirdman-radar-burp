@@ -86,19 +86,26 @@ public final class ProxyHighlight implements ProxyResponseHandler {
         return a.hasHighlightColor() ? out : out.withHighlightColor(risk == Risk.HIGH ? HighlightColor.RED : HighlightColor.ORANGE);
     }
 
-    /** "Hirdman Radar: High risk, 12 infostealer records, 3 work accounts": counts that are zero are left out. */
+    /** "Hirdman Radar: High risk, 12 infostealer records, 3 work email records": counts that are zero are left out. */
     static String note(HostResult r) {
         List<String> parts = new ArrayList<>();
         parts.add(r.risk().label() + " risk");
+        parts.addAll(counts(r));
+        return NOTE + String.join(", ", parts);
+    }
+
+    /** The host's non-zero counts in the words of the table's columns, shared by every note the plugin writes. */
+    static List<String> counts(HostResult r) {
+        List<String> parts = new ArrayList<>();
         if (r.stealer() > 0) {
             parts.add(count(r.stealer(), "infostealer record"));
         }
         if (r.work() > 0) {
-            parts.add(count(r.work(), "work account"));
+            parts.add(count(r.work(), "work email record"));
         }
         if (r.personal() > 0) {
-            parts.add(count(r.personal(), "personal account"));
+            parts.add(count(r.personal(), "host login record"));
         }
-        return NOTE + String.join(", ", parts);
+        return parts;
     }
 }

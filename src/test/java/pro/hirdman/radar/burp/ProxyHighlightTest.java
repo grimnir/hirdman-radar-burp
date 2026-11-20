@@ -87,14 +87,14 @@ class ProxyHighlightTest {
     @Test
     void highRiskHostsAreRedWithTheirCounts() {
         checked("vpn.example.com", "high", 12, 3, 0);
-        assertEquals(new Notes("Hirdman Radar: High risk, 12 infostealer records, 3 work accounts", HighlightColor.RED),
+        assertEquals(new Notes("Hirdman Radar: High risk, 12 infostealer records, 3 work email records", HighlightColor.RED),
                 handle("VPN.example.com", new Notes("", HighlightColor.NONE)));
     }
 
     @Test
     void mediumRiskHostsAreOrange() {
         checked("mail.example.com", "medium", 0, 0, 1);
-        assertEquals(new Notes("Hirdman Radar: Medium risk, 1 personal account", HighlightColor.ORANGE),
+        assertEquals(new Notes("Hirdman Radar: Medium risk, 1 host login record", HighlightColor.ORANGE),
                 handle("mail.example.com", new Notes("", HighlightColor.NONE)));
     }
 

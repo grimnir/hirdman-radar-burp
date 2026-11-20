@@ -167,16 +167,7 @@ public final class BurpOrganizer {
         if (!r.checked()) {
             return "Hirdman Radar: not checked for leaks yet";
         }
-        List<String> counts = new ArrayList<>();
-        if (r.stealer() > 0) {
-            counts.add(StatusText.count(r.stealer(), "infostealer record"));
-        }
-        if (r.work() > 0) {
-            counts.add(StatusText.count(r.work(), "work account"));
-        }
-        if (r.personal() > 0) {
-            counts.add(StatusText.count(r.personal(), "personal account"));
-        }
+        List<String> counts = ProxyHighlight.counts(r);
         return counts.isEmpty() ? "Hirdman Radar: no leaks known for this host"
                 : "Hirdman Radar: " + String.join(", ", counts) + "; prioritise auth testing";
     }

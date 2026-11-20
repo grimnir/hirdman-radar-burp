@@ -138,7 +138,7 @@ class BurpOrganizerTest {
         inSiteMap("https://other.example.com/owa/", response(200, MimeType.HTML, ""));
         String line = organizer().send(List.of(row("mail.example.com", OWA, 12, 3, 5)));
         assertEquals(List.of(new Sent("https://mail.example.com/owa/auth/logon.aspx?a=1",
-                "Hirdman Radar: 12 infostealer records, 3 work accounts, 5 personal accounts;"
+                "Hirdman Radar: 12 infostealer records, 3 work email records, 5 host login records;"
                         + " prioritise auth testing")), sent);
         assertEquals("Hirdman Radar: sent 1 login page to Organizer", line);
         assertEquals(1, siteMapWalks);
@@ -162,7 +162,7 @@ class BurpOrganizerTest {
         inHistory("https://mail.example.com/owa/x.js", response(404, MimeType.HTML, ""));
         String line = organizer().send(List.of(row("mail.example.com", OWA, 0, 0, 2)));
         assertEquals(List.of(new Sent("https://MAIL.example.com/owa/auth/logon.aspx",
-                "Hirdman Radar: 2 personal accounts; prioritise auth testing")), sent);
+                "Hirdman Radar: 2 host login records; prioritise auth testing")), sent);
         assertEquals("Hirdman Radar: sent 1 login page to Organizer", line);
     }
 
