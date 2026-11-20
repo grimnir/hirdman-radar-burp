@@ -3,7 +3,11 @@ package pro.hirdman.radar.api;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.Strictness;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
 import java.io.IOException;
+import java.io.StringReader;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -22,6 +26,10 @@ public final class RadarClient implements Radar {
     private static final Duration POLL_TIMEOUT = Duration.ofSeconds(30);
     // Job ids end up in URL paths, so only plain tokens are accepted.
     private static final Pattern JOB_ID = Pattern.compile("[A-Za-z0-9_-]{1,128}");
+    /** The contract allows 400 hosts per job with a key, 50 without. */
+    static final int MAX_HOSTS = 400;
+    /** A larger list is not a discovery result; nothing of it is kept. */
+    static final int MAX_SUBDOMAINS = 5000;
 
     private final ConnectionSettings settings;
     private final Transport transport;
@@ -43,8 +51,12 @@ public final class RadarClient implements Radar {
     @Override
     public Meta meta() throws ApiException {
         Meta m = parse(send("GET", "/api/v1/meta", null, META_TIMEOUT), Meta.class);
-        if (m.limits() == null || m.limits().maxHosts() < 1) {
+        if (m.limits() == null) {
             throw ApiException.malformed("no limits in /meta", null);
+        }
+        Meta.Limits l = m.limits();
+        if (l.maxHosts() < 1 || l.maxHosts() > MAX_HOSTS || !Double.isFinite(l.hostsPerSec()) || l.hostsPerSec() <= 0) {
+            throw ApiException.malformed("limits in /meta out of range", null);
         }
         return m;
     }
@@ -52,7 +64,11 @@ public final class RadarClient implements Radar {
     @Override
     public SubdomainList subdomains(String domain, boolean rescan) throws ApiException {
         String query = "?domain=" + URLEncoder.encode(domain, StandardCharsets.UTF_8) + (rescan ? "&rescan=true" : "");
-        return parse(send("GET", "/api/v1/subdomains" + query, null, SUBDOMAINS_TIMEOUT), SubdomainList.class);
+        SubdomainList list = parse(send("GET", "/api/v1/subdomains" + query, null, SUBDOMAINS_TIMEOUT), SubdomainList.class);
+        if (list.subdomains().size() > MAX_SUBDOMAINS) {
+            throw ApiException.malformed("more than " + MAX_SUBDOMAINS + " subdomains", null);
+        }
+        return list;
     }
 
     @Override
@@ -123,13 +139,16 @@ public final class RadarClient implements Radar {
         }
     }
 
+    /** Strict JSON only: no unquoted names, NaN, comments or data after the object. */
     private static JsonObject object(Reply r) throws ApiException {
         try {
-            JsonElement e = JsonParser.parseString(r.body());
-            if (e.isJsonObject()) {
+            JsonReader reader = new JsonReader(new StringReader(r.body()));
+            reader.setStrictness(Strictness.STRICT);
+            JsonElement e = JsonParser.parseReader(reader);
+            if (e.isJsonObject() && reader.peek() == JsonToken.END_DOCUMENT) {
                 return e.getAsJsonObject();
             }
-        } catch (RuntimeException e) {
+        } catch (IOException | RuntimeException e) {
             throw ApiException.malformed(e.getMessage(), e);
         }
         throw ApiException.malformed("answer is not a JSON object", null);
