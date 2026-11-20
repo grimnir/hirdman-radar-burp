@@ -8,6 +8,7 @@ import pro.hirdman.radar.Version;
 import pro.hirdman.radar.api.ApiException;
 import pro.hirdman.radar.api.Json;
 import pro.hirdman.radar.api.Meta;
+import pro.hirdman.radar.export.ResultsExport;
 import pro.hirdman.radar.jobs.StatusText;
 
 /** The server line under the results table, with an optional link after it, and the footer note. */
@@ -16,7 +17,7 @@ record ServerLine(String text, boolean tryAgain, @Nullable String linkText, @Nul
     static final ServerLine NONE = new ServerLine("", false);
     static final ServerLine UNEXPECTED = new ServerLine(
             "Could not check the radar server: unexpected error. Details are in the extension's Errors tab.", true);
-    static final String COUNTS_ONLY = "Counts only: no accounts, passwords, raw records or dumps.";
+    static final String COUNTS_ONLY = ResultsExport.NOTE;
     static final String PARTIAL = "Partial check, about a third of a full HIRDMAN review.";
     static final String RELEASES = "https://github.com/grimnir/hirdman-radar-burp/releases/latest";
     static final String DEFAULT_HOST = "scan.hirdman.pro";

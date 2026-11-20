@@ -85,7 +85,7 @@ public final class NewHostBatcher {
 
     /** Hosts of a check that failed: they go back to the queue and leave with the next batch. */
     public synchronized void retry(Collection<String> hosts) {
-        hosts.forEach(batched::remove);
+        forget(hosts);
         for (String h : hosts) {
             if (pending.size() >= MAX_PENDING) {
                 break;

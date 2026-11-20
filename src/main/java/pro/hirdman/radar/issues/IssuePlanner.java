@@ -33,8 +33,8 @@ public final class IssuePlanner {
             "work_accounts", new Kind("Work email addresses found in breaches", Risk.HIGH),
             "personal_accounts", new Kind("Credentials for host found in breaches", Risk.MEDIUM),
             "breached_db_records", new Kind("Host found in breached databases", Risk.LOW));
-    /** What ConnectionSettings produces; anything else gets no link, so nothing odd reaches the issue HTML. */
     private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC);
+    /** What ConnectionSettings produces; anything else gets no link, so nothing odd reaches the issue HTML. */
     private static final Pattern SITE = Pattern.compile("https?://[a-z0-9.\\-\\[\\]:]+");
 
     private IssuePlanner() {

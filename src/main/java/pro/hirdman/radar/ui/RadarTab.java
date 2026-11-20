@@ -370,10 +370,7 @@ public final class RadarTab extends JPanel {
     /** A few hosts go at once; more wait for a question with this hour's allowance, asked afresh in the background. */
     private void checkRest() {
         Optional<RestCheck> rest = model.rest();
-        if (rest.isEmpty()) {
-            return;
-        }
-        if (sayIfPrivate()) {
+        if (rest.isEmpty() || sayIfPrivate()) {
             return;
         }
         Options o = options.get();
