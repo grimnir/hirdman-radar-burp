@@ -9,7 +9,9 @@ import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.ui.settings.SettingData;
 import burp.api.montoya.ui.settings.SettingsPanelBuilder;
 import burp.api.montoya.ui.settings.SettingsPanelPersistence;
+import burp.api.montoya.ui.settings.SettingsPanelSetting;
 import burp.api.montoya.ui.settings.SettingsPanelWithData;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 import pro.hirdman.radar.config.Options;
@@ -40,33 +42,41 @@ public final class RadarSettings {
 
     private final SettingsPanelWithData panel;
     private final BooleanSupplier offForProject;
+    private final boolean issues;
 
-    public RadarSettings(MontoyaApi api, BooleanSupplier offForProject) {
+    /** {@code issues}: Burp has issues (not Community Edition), so the panel shows the issue settings. */
+    public RadarSettings(MontoyaApi api, BooleanSupplier offForProject, boolean issues) {
         this.offForProject = offForProject;
+        this.issues = issues;
         Options d = Options.defaults();
+        List<SettingsPanelSetting> settings = new ArrayList<>(List.of(
+                stringSetting(SERVER_URL, d.serverUrl()),
+                booleanSetting(VERIFY_TLS, true)));
+        if (issues) {
+            settings.addAll(List.of(
+                    booleanSetting(AUTO_ISSUES, d.autoIssues()),
+                    booleanSetting(OUT_OF_SCOPE, d.includeOutOfScope()),
+                    listSetting(LOWEST, SEVERITIES, d.lowest().label())));
+        }
+        settings.addAll(List.of(
+                booleanSetting(SITE_MAP, d.addToSiteMap()),
+                booleanSetting(TRAFFIC, d.watchTraffic()),
+                booleanSetting(HIGHLIGHT, false),
+                booleanSetting(RECHECK, d.recheckNotChecked()),
+                integerSetting(ATTEMPTS, d.attempts()),
+                booleanSetting(ALWAYS_RESCAN, d.alwaysRescan())));
         panel = SettingsPanelBuilder.settingsPanel()
                 .withPersistence(SettingsPanelPersistence.USER_SETTINGS)
                 .withTitle("Hirdman Radar")
                 .withKeywords("hirdman", "radar", "leaks")
-                .withSettings(
-                        stringSetting(SERVER_URL, d.serverUrl()),
-                        booleanSetting(VERIFY_TLS, true),
-                        booleanSetting(AUTO_ISSUES, d.autoIssues()),
-                        booleanSetting(OUT_OF_SCOPE, d.includeOutOfScope()),
-                        listSetting(LOWEST, SEVERITIES, d.lowest().label()),
-                        booleanSetting(SITE_MAP, d.addToSiteMap()),
-                        booleanSetting(TRAFFIC, d.watchTraffic()),
-                        booleanSetting(HIGHLIGHT, false),
-                        booleanSetting(RECHECK, d.recheckNotChecked()),
-                        integerSetting(ATTEMPTS, d.attempts()),
-                        booleanSetting(ALWAYS_RESCAN, d.alwaysRescan()))
+                .withSettings(settings.toArray(SettingsPanelSetting[]::new))
                 .build();
         api.userInterface().registerSettingsPanel(panel);
     }
 
     /** Current values; cheap, so read before every job. */
     public Options snapshot() {
-        return read(panel, offForProject.getAsBoolean());
+        return read(panel, offForProject.getAsBoolean(), issues);
     }
 
     /** Read on the request path (at most once a second), so only this one setting. */
@@ -104,9 +114,12 @@ public final class RadarSettings {
         return data.getString(SERVER_URL);
     }
 
-    static Options read(SettingData data, boolean offForProject) {
-        return new Options(data.getString(SERVER_URL), data.getBoolean(AUTO_ISSUES), data.getBoolean(OUT_OF_SCOPE),
-                severity(data.getString(LOWEST)), data.getBoolean(SITE_MAP), data.getBoolean(TRAFFIC), data.getBoolean(RECHECK),
+    /** Without issues the panel lacks their settings: no automatic issues, the rest at their defaults. */
+    static Options read(SettingData data, boolean offForProject, boolean issues) {
+        Options d = Options.defaults();
+        return new Options(data.getString(SERVER_URL), issues && data.getBoolean(AUTO_ISSUES),
+                issues ? data.getBoolean(OUT_OF_SCOPE) : d.includeOutOfScope(), issues ? severity(data.getString(LOWEST)) : d.lowest(),
+                data.getBoolean(SITE_MAP), data.getBoolean(TRAFFIC), data.getBoolean(RECHECK),
                 data.getInteger(ATTEMPTS), data.getBoolean(ALWAYS_RESCAN), offForProject);
     }
 

@@ -33,10 +33,13 @@ class RadarSettingsTest {
     final Map<String, Object> values = new HashMap<>();
 
     Options read() {
-        return RadarSettings.read(fake(SettingData.class, this::stored), off);
+        return RadarSettings.read(fake(SettingData.class, this::stored), off, issues);
     }
 
+    final List<String> asked = new ArrayList<>();
+
     Object stored(String method, Object[] args) {
+        asked.add((String) args[0]);
         return values.getOrDefault((String) args[0], switch (method) {
             case "getString" -> "";
             case "getBoolean" -> false;
@@ -45,6 +48,7 @@ class RadarSettingsTest {
     }
 
     boolean off;
+    boolean issues = true;
 
     @Test
     void theProjectSwitchTurnsJobsAndTrafficChecksOffForThisProjectOnly() {
@@ -66,16 +70,26 @@ class RadarSettingsTest {
         }
     }
 
-    @Test
-    void oneSettingsPanelBecauseBurpTakesOnlyOne() {
+    final List<String> shown = new ArrayList<>();
+
+    /** Burp's settings factories, faked: the panel answers from {@link #values} and {@link #shown} lists its labels. */
+    SettingsPanelWithData fakeBurpFactory() {
         burpFactory = ObjectFactoryLocator.FACTORY;
         AtomicReference<SettingsPanelBuilder> builder = new AtomicReference<>();
         SettingsPanelWithData panel = fake(SettingsPanelWithData.class, this::stored);
         builder.set(fake(SettingsPanelBuilder.class, (m, a) -> m.equals("build") ? panel : builder.get()));
-        ObjectFactoryLocator.FACTORY = fake(MontoyaObjectFactory.class, (m, a) -> m.equals("settingsPanel") ? builder.get()
-                : fake(SettingsPanelSetting.class, Map.of()));
-        List<SettingsPanel> registered = new ArrayList<>();
-        MontoyaApi api = fake(MontoyaApi.class, Map.of("userInterface", fake(UserInterface.class, (m, a) -> {
+        ObjectFactoryLocator.FACTORY = fake(MontoyaObjectFactory.class, (m, a) -> {
+            if (m.equals("settingsPanel")) {
+                return builder.get();
+            }
+            shown.add((String) a[0]);
+            return fake(SettingsPanelSetting.class, Map.of());
+        });
+        return panel;
+    }
+
+    static MontoyaApi api(List<SettingsPanel> registered) {
+        return fake(MontoyaApi.class, Map.of("userInterface", fake(UserInterface.class, (m, a) -> {
             if (!m.equals("registerSettingsPanel")) {
                 return Fakes.DEFAULT;
             }
@@ -85,9 +99,39 @@ class RadarSettingsTest {
             registered.add((SettingsPanel) a[0]);
             return fake(Registration.class, Map.of());
         })));
+    }
+
+    @Test
+    void communityEditionHasNoIssueSettings() {
+        fakeBurpFactory();
+        values.put("Create issues automatically", true);
+        RadarSettings settings = new RadarSettings(api(new ArrayList<>()), () -> false, false);
+        assertEquals(RadarSettings.LABELS.stream()
+                .filter(l -> !List.of("Create issues automatically", "Include out-of-scope hosts", "Lowest severity to report").contains(l))
+                .toList(), shown);
+        asked.clear();
+        Options o = settings.snapshot();
+        assertEquals(false, o.autoIssues());
+        assertEquals(Options.defaults().includeOutOfScope(), o.includeOutOfScope());
+        assertEquals(Options.defaults().lowest(), o.lowest());
+        assertEquals(List.of(), asked.stream().filter(k -> k.contains("issues") || k.contains("severity") || k.contains("out-of-scope")).toList(),
+                "settings the panel lacks are never read");
+    }
+
+    @Test
+    void professionalShowsEverySetting() {
+        fakeBurpFactory();
+        new RadarSettings(api(new ArrayList<>()), () -> false, true);
+        assertEquals(RadarSettings.LABELS, shown);
+    }
+
+    @Test
+    void oneSettingsPanelBecauseBurpTakesOnlyOne() {
+        SettingsPanelWithData panel = fakeBurpFactory();
+        List<SettingsPanel> registered = new ArrayList<>();
         values.put(TRAFFIC, true);
         AtomicBoolean projectOff = new AtomicBoolean();
-        RadarSettings settings = new RadarSettings(api, projectOff::get);
+        RadarSettings settings = new RadarSettings(api(registered), projectOff::get, true);
         assertEquals(1, registered.size());
         assertSame(panel, registered.get(0));
         assertEquals(true, settings.watchTraffic());
