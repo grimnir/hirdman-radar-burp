@@ -20,6 +20,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
+import pro.hirdman.radar.Threads;
 import pro.hirdman.radar.jobs.Job;
 import pro.hirdman.radar.jobs.JobKind;
 import pro.hirdman.radar.jobs.JobQueue;
@@ -123,11 +124,7 @@ public final class TrafficWatcher implements HttpHandler {
     @SuppressWarnings("FutureReturnValueIgnored")
     public synchronized void start() {
         if (timer == null) {
-            ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "hirdman-radar-traffic");
-                t.setDaemon(true);
-                return t;
-            });
+            ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(Threads.daemon("hirdman-radar-traffic"));
             this.timer = timer;
             timer.scheduleAtFixedRate(() -> drainSafely(Instant.now()), PERIOD_SECONDS, PERIOD_SECONDS, TimeUnit.SECONDS);
         }
