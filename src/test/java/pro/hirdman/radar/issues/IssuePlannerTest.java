@@ -223,7 +223,7 @@ class IssuePlannerTest {
 
     @Test
     void entitiesStayAndBareAmpersandsAreEscaped() {
-        assertEquals("1 &lt; 2 &amp;&amp; &#8226; &nbsp; a &amp; b &amp;bogus", IssueHtml.clean("1 &lt; 2 && &#8226; &nbsp; a & b &bogus"));
+        assertEquals("1 &lt; 2 &amp;&amp; \u2022 &nbsp; a &amp; b &amp;bogus", IssueHtml.clean("1 &lt; 2 && &#8226; &nbsp; a & b &bogus"));
     }
 
     @Test

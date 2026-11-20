@@ -19,7 +19,8 @@ final class IssueHtml {
     private static final List<String> TAGS = List.of("p", "b", "i", "ul", "ol", "li");
     // Only the exact form the server writes: https, no attributes but href, no quotes, spaces or & in the address.
     private static final Pattern LINK = Pattern.compile("<a href=\"https://[A-Za-z0-9.-]{1,253}(?:/[A-Za-z0-9._~!$()*+,;=:@%/?#-]{0,300})?\">");
-    private static final Pattern ENTITY = Pattern.compile("&(?:[a-zA-Z][a-zA-Z0-9]{1,30}|#[0-9]{1,7}|#x[0-9a-fA-F]{1,6});");
+    // Named entities that only stand for text; numeric ones are decoded and go through the raw character rules.
+    private static final Pattern ENTITY = Pattern.compile("&(?:(amp|lt|gt|quot|nbsp)|#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6}));");
 
     private IssueHtml() {
     }
@@ -36,7 +37,7 @@ final class IssueHtml {
         Deque<String> open = new ArrayDeque<>();
         int i = 0;
         while (i < s.length()) {
-            char c = s.charAt(i);
+            int c = s.codePointAt(i);
             if (c == '<') {
                 int end = tag(s, i, link, open, out);
                 if (end > i) {
@@ -45,29 +46,43 @@ final class IssueHtml {
                 }
             }
             if (c == '&' && entity.region(i, s.length()).lookingAt()) {
-                out.append(entity.group());
+                if (entity.group(1) != null) {
+                    out.append(entity.group());
+                } else if (entity.group(2) != null) {
+                    character(Integer.parseInt(entity.group(2)), out);
+                } else {
+                    character(Integer.parseInt(entity.group(3), 16), out);
+                }
                 i = entity.end();
                 continue;
             }
-            switch (c) {
-                case '<' -> out.append("&lt;");
-                case '>' -> out.append("&gt;");
-                case '&' -> out.append("&amp;");
-                case '"' -> out.append("&quot;");
-                case '\'' -> out.append("&#39;");
-                default -> {
-                    boolean control = Character.isISOControl(c) && c != '\n' && c != '\r' && c != '\t';
-                    if (!control && Character.getType(c) != Character.FORMAT) {
-                        out.append(c);
-                    }
-                }
-            }
-            i++;
+            character(c, out);
+            i += Character.charCount(c);
         }
         while (!open.isEmpty()) {
             out.append("</").append(open.pop()).append('>');
         }
         return out.toString();
+    }
+
+    /** One character as text: markup escaped; control, format (bidi), lone surrogate and invalid code points dropped. */
+    private static void character(int c, StringBuilder out) {
+        switch (c) {
+            case '<' -> out.append("&lt;");
+            case '>' -> out.append("&gt;");
+            case '&' -> out.append("&amp;");
+            case '"' -> out.append("&quot;");
+            case '\'' -> out.append("&#39;");
+            default -> {
+                if (!Character.isValidCodePoint(c) || Character.isISOControl(c) && c != '\n' && c != '\r' && c != '\t') {
+                    return;
+                }
+                int type = Character.getType(c);
+                if (type != Character.FORMAT && type != Character.SURROGATE) {
+                    out.appendCodePoint(c);
+                }
+            }
+        }
     }
 
     /** Plain text for HTML element content (never an attribute): markup characters escaped, entities included. */
