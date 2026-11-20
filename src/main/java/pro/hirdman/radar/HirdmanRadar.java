@@ -49,7 +49,7 @@ public final class HirdmanRadar implements BurpExtension {
         Logging log = api.logging();
 
         ProjectSwitch projectSwitch = new ProjectSwitch(api.persistence().extensionData());
-        RadarSettings settings = new RadarSettings(api, projectSwitch::off);
+        RadarSettings settings = new RadarSettings(api, projectSwitch::off, RadarSettings.savedByBurp(NAME));
         ProjectStore project = new ProjectStore(api.persistence().extensionData(), log::logToError);
         ResultStore store = project.load();
 
