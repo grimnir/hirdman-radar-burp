@@ -113,6 +113,27 @@ class ExportActionsTest {
         assertEquals(List.of(ExportActions.EXPORT_FAILED), said);
         assertEquals(1, log.errors.size());
         assertTrue(log.errors.get(0).startsWith("Hirdman Radar: export to " + dir + " failed: "), log.errors.get(0));
+        assertEquals(List.of(), log.causes, "a file that cannot be written is one line, without a stack");
+    }
+
+    @Test
+    void anUnexpectedExportFailureKeepsItsStack(@TempDir Path dir) throws Exception {
+        IllegalStateException broke = new IllegalStateException("scope broke");
+        ExportActions failing = new ExportActions(model, store, Options::defaults, h -> {
+            throw broke;
+        }, Runnable::run, log, said::add, copied::add, JPanel::new, c -> { });
+        checked("a.example.com", "high");
+        model.setDomain("example.com");
+        Path out = dir.resolve("r.csv");
+        failing.saveDialog = name -> Optional.of(out);
+        for (Component c : failing.menu.getComponents()) {
+            if (c instanceof JMenuItem i && i.getText().equals("CSV...")) {
+                i.doClick(0);
+            }
+        }
+        SwingUtilities.invokeAndWait(() -> { });
+        assertEquals(List.of("Hirdman Radar: export to " + out + " failed"), log.errors);
+        assertEquals(List.of(broke), log.causes);
     }
 
     @Test

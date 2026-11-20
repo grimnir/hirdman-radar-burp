@@ -147,7 +147,7 @@ public final class BurpSiteMap {
                 return new Put(added, there.size());
             } catch (RuntimeException e) {
                 off = true;
-                api.logging().logToError("Hirdman Radar: Burp's site map did not take a host, so found hosts stay in the plugin tab only. " + e);
+                api.logging().logToError("Hirdman Radar: Burp's site map did not take a host, so found hosts stay in the plugin tab only", e);
                 return null;
             }
         }

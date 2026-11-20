@@ -107,8 +107,11 @@ final class ExportActions {
                     : ResultsExport.csv(rows, inScope);
             Files.writeString(path, text, StandardCharsets.UTF_8);
             log.info("Hirdman Radar: exported " + StatusText.count(rows.size(), "host") + " to " + path);
-        } catch (IOException | RuntimeException e) {
+        } catch (IOException e) {
             log.error("Hirdman Radar: export to " + path + " failed: " + e);
+            SwingUtilities.invokeLater(() -> message.accept(EXPORT_FAILED));
+        } catch (RuntimeException e) {
+            log.error("Hirdman Radar: export to " + path + " failed", e);
             SwingUtilities.invokeLater(() -> message.accept(EXPORT_FAILED));
         }
     }

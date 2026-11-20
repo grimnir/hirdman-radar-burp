@@ -9,6 +9,7 @@ import java.awt.Component;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
@@ -61,7 +62,7 @@ public final class HirdmanRadar implements BurpExtension {
 
         ProjectSwitch projectSwitch = new ProjectSwitch(api.persistence().extensionData());
         RadarSettings settings = new RadarSettings(api, projectSwitch::off, pro);
-        ProjectStore project = new ProjectStore(api.persistence().extensionData(), log::logToError);
+        ProjectStore project = new ProjectStore(api.persistence().extensionData(), log::logToError, log::logToError);
         ResultStore store = project.load();
 
         BurpTransport transport = new BurpTransport(api.http(), settings::verifyTls, projectSwitch::off, log::logToError);
@@ -176,12 +177,12 @@ public final class HirdmanRadar implements BurpExtension {
     }
 
     /** Unload: a failing step must not skip the final save. */
-    static void runAll(Consumer<String> error, Runnable... steps) {
+    static void runAll(BiConsumer<String, Throwable> error, Runnable... steps) {
         for (Runnable step : steps) {
             try {
                 step.run();
             } catch (RuntimeException e) {
-                error.accept("Hirdman Radar: unload step failed: " + e);
+                error.accept("Hirdman Radar: unload step failed", e);
             }
         }
     }

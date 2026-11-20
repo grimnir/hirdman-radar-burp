@@ -13,9 +13,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import pro.hirdman.radar.model.HostResult;
 import pro.hirdman.radar.model.ResultStore;
@@ -31,17 +31,17 @@ public final class ProxyHighlight implements ProxyResponseHandler {
 
     private final ResultStore store;
     private final CachedFlag enabled;
-    private final Consumer<String> error;
+    private final BiConsumer<String, Throwable> error;
     private final BiFunction<InterceptedResponse, Annotations, ProxyResponseReceivedAction> received;
     private final Function<InterceptedResponse, ProxyResponseToBeSentAction> toBeSent;
     private final AtomicBoolean logged = new AtomicBoolean();
 
-    public ProxyHighlight(ResultStore store, BooleanSupplier enabled, Consumer<String> error) {
+    public ProxyHighlight(ResultStore store, BooleanSupplier enabled, BiConsumer<String, Throwable> error) {
         this(store, enabled, error, ProxyResponseReceivedAction::continueWith, ProxyResponseToBeSentAction::continueWith);
     }
 
     /** The pass-through factories work only inside Burp, so tests hand in their own. */
-    ProxyHighlight(ResultStore store, BooleanSupplier enabled, Consumer<String> error,
+    ProxyHighlight(ResultStore store, BooleanSupplier enabled, BiConsumer<String, Throwable> error,
             BiFunction<InterceptedResponse, Annotations, ProxyResponseReceivedAction> received,
             Function<InterceptedResponse, ProxyResponseToBeSentAction> toBeSent) {
         this.store = store;
@@ -61,7 +61,7 @@ public final class ProxyHighlight implements ProxyResponseHandler {
         } catch (RuntimeException e) {
             // Burp's own thread: never throw back, and log only the first failure.
             if (!logged.getAndSet(true)) {
-                error.accept("Hirdman Radar: Proxy highlight skipped a response: " + e);
+                error.accept("Hirdman Radar: Proxy highlight skipped a response", e);
             }
         }
         return received.apply(response, annotations);

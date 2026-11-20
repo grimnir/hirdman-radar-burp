@@ -17,9 +17,17 @@ class BurpThreadTest {
     final List<String> errors = new CopyOnWriteArrayList<>();
     final List<String> ran = new CopyOnWriteArrayList<>();
 
+    final List<Throwable> causes = new CopyOnWriteArrayList<>();
+
+    /** Burp's logToError(String, Throwable): the message and its cause apart. */
+    void error(String message, Throwable cause) {
+        errors.add(message);
+        causes.add(cause);
+    }
+
     @Test
     void runsTasksInOrderOffTheCallersThread() throws Exception {
-        BurpThread t = new BurpThread(errors::add);
+        BurpThread t = new BurpThread(this::error);
         CountDownLatch done = new CountDownLatch(2);
         String caller = Thread.currentThread().getName();
         t.execute(() -> {
@@ -37,20 +45,21 @@ class BurpThreadTest {
 
     @Test
     void aFailingTaskIsLoggedAndTheNextStillRuns() throws Exception {
-        BurpThread t = new BurpThread(errors::add);
+        BurpThread t = new BurpThread(this::error);
         CountDownLatch done = new CountDownLatch(1);
         t.execute(() -> {
             throw new IllegalStateException("Burp says no");
         });
         t.execute(done::countDown);
         assertTrue(done.await(5, TimeUnit.SECONDS));
-        assertEquals(List.of("Hirdman Radar: java.lang.IllegalStateException: Burp says no"), errors);
+        assertEquals(List.of("Hirdman Radar: a call into Burp failed"), errors);
+        assertEquals("Burp says no", causes.get(0).getMessage(), "the stack goes to the Errors tab");
         t.close(Duration.ofSeconds(1));
     }
 
     @Test
     void afterCloseTasksAreDroppedQuietly() {
-        BurpThread t = new BurpThread(errors::add);
+        BurpThread t = new BurpThread(this::error);
         t.close(Duration.ofSeconds(1));
         t.execute(() -> ran.add("late"));
         assertEquals(List.of(), ran);
@@ -60,7 +69,7 @@ class BurpThreadTest {
     @Test
     void closeLetsQueuedTasksFinishWithinTheBudget() throws Exception {
         // Issues queued just before unload used to be thrown away.
-        BurpThread t = new BurpThread(errors::add);
+        BurpThread t = new BurpThread(this::error);
         CountDownLatch started = new CountDownLatch(1);
         CountDownLatch go = new CountDownLatch(1);
         t.execute(() -> {
@@ -80,7 +89,7 @@ class BurpThreadTest {
 
     @Test
     void closeReturnsWhenTheBudgetRunsOut() throws Exception {
-        BurpThread t = new BurpThread(errors::add);
+        BurpThread t = new BurpThread(this::error);
         CountDownLatch started = new CountDownLatch(1);
         t.execute(() -> {
             started.countDown();

@@ -48,10 +48,18 @@ class ProxyHighlightTest {
     final ResultStore store = new ResultStore();
     final AtomicBoolean enabled = new AtomicBoolean(true);
     final List<String> errors = new CopyOnWriteArrayList<>();
+
+    final List<Throwable> causes = new CopyOnWriteArrayList<>();
+
+    /** Burp's logToError(String, Throwable): the message and its cause apart. */
+    void error(String message, Throwable cause) {
+        errors.add(message);
+        causes.add(cause);
+    }
     Annotations passed;
     final ProxyResponseReceivedAction received = fake(ProxyResponseReceivedAction.class, Map.of());
     final ProxyResponseToBeSentAction toBeSent = fake(ProxyResponseToBeSentAction.class, Map.of());
-    final ProxyHighlight highlight = new ProxyHighlight(store, enabled::get, errors::add, (r, a) -> {
+    final ProxyHighlight highlight = new ProxyHighlight(store, enabled::get, this::error, (r, a) -> {
         passed = a;
         return received;
     }, r -> toBeSent);
@@ -131,8 +139,8 @@ class ProxyHighlightTest {
         });
         assertSame(received, highlight.handleResponseReceived(broken));
         assertSame(received, highlight.handleResponseReceived(broken));
-        assertEquals(1, errors.size(), errors.toString());
-        assertTrue(errors.get(0).startsWith("Hirdman Radar: Proxy highlight skipped a response: "), errors.get(0));
+        assertEquals(List.of("Hirdman Radar: Proxy highlight skipped a response"), errors);
+        assertTrue(causes.get(0).getMessage().startsWith("broken "), causes.toString());
         assertEquals(new Notes("", HighlightColor.NONE), Notes.of(passed));
     }
 

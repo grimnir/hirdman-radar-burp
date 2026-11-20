@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.CopyOnWriteArrayList;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import org.junit.jupiter.api.Test;
 import pro.hirdman.radar.model.HostResult;
 import pro.hirdman.radar.model.HostStatus;
@@ -18,6 +20,14 @@ class ScopeIssuesTest {
             Instant.EPOCH));
     final List<List<HostResult>> reported = new ArrayList<>();
     final List<String> errors = new ArrayList<>();
+
+    final List<Throwable> causes = new CopyOnWriteArrayList<>();
+
+    /** Burp's logToError(String, Throwable): the message and its cause apart. */
+    void error(String message, Throwable cause) {
+        errors.add(message);
+        causes.add(cause);
+    }
     final List<Runnable> queued = new ArrayList<>();
     boolean auto = true;
     RuntimeException failure;
@@ -29,7 +39,7 @@ class ScopeIssuesTest {
             }
             reported.add(all);
             return all.size();
-        }, executor, errors::add, (task, delay) -> {
+        }, executor, this::error, (task, delay) -> {
             delays.add(delay);
             task.run();
         });
@@ -43,7 +53,7 @@ class ScopeIssuesTest {
         ScopeIssues s = new ScopeIssues(() -> rows, () -> auto, all -> {
             reported.add(all);
             return all.size();
-        }, Runnable::run, errors::add, (task, delay) -> {
+        }, Runnable::run, this::error, (task, delay) -> {
             delays.add(delay);
             waiting.add(task);
         });
@@ -89,8 +99,8 @@ class ScopeIssuesTest {
         failure = new IllegalStateException("site map busy");
         ScopeIssues s = scopeIssues(Runnable::run);
         s.scopeChanged(null);
-        assertEquals(1, errors.size());
-        assertTrue(errors.get(0).startsWith("Hirdman Radar: issues after a scope change could not be created: "), errors.get(0));
+        assertEquals(List.of("Hirdman Radar: issues after a scope change could not be created"), errors);
+        assertSame(failure, causes.get(0));
         failure = null;
         s.scopeChanged(null);
         assertEquals(List.of(rows), reported);

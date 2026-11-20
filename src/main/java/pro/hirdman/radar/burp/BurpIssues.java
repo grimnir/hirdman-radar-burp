@@ -54,7 +54,7 @@ public final class BurpIssues {
                 reported.add(s.key());
                 added++;
             } catch (RuntimeException e) {
-                api.logging().logToError("Hirdman Radar: issue \"" + s.name() + "\" for " + r.host() + " could not be created: " + e);
+                api.logging().logToError("Hirdman Radar: issue \"" + s.name() + "\" for " + r.host() + " could not be created", e);
             }
         }
         return added;
@@ -71,7 +71,7 @@ public final class BurpIssues {
         try {
             out = specs.stream().map(toIssue).toList();
         } catch (RuntimeException e) {
-            api.logging().logToError("Hirdman Radar: issues for " + r.host() + " could not be created: " + e);
+            api.logging().logToError("Hirdman Radar: issues for " + r.host() + " could not be created", e);
             return List.of();
         }
         specs.forEach(s -> reported.add(s.key()));
@@ -96,7 +96,7 @@ public final class BurpIssues {
             looked.add(baseUrl);
             return specs.stream().filter(s -> !reported.contains(s.key())).toList();
         } catch (RuntimeException e) {
-            api.logging().logToError("Hirdman Radar: issues for " + r.host() + " could not be created: " + e);
+            api.logging().logToError("Hirdman Radar: issues for " + r.host() + " could not be created", e);
             return List.of();
         }
     }

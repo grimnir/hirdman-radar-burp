@@ -55,6 +55,14 @@ class TrafficWatcherTest {
     final JobQueue queue = new JobQueue(runner, () -> null, j -> { });
     final AtomicBoolean enabled = new AtomicBoolean(true);
     final List<String> errors = new CopyOnWriteArrayList<>();
+
+    final List<Throwable> causes = new CopyOnWriteArrayList<>();
+
+    /** Burp's logToError(String, Throwable): the message and its cause apart. */
+    void error(String message, Throwable cause) {
+        errors.add(message);
+        causes.add(cause);
+    }
     final RequestToBeSentAction sent = fake(RequestToBeSentAction.class, Map.of());
     final ResponseReceivedAction received = fake(ResponseReceivedAction.class, Map.of());
     final List<Object> passed = new CopyOnWriteArrayList<>();
@@ -66,7 +74,7 @@ class TrafficWatcherTest {
 
     TrafficWatcher watcher() {
         if (watcher == null) {
-            watcher = new TrafficWatcher(batcher, enabled::get, queue, errors::add, r -> responses.accept(r), r -> {
+            watcher = new TrafficWatcher(batcher, enabled::get, queue, this::error, r -> responses.accept(r), r -> {
                 passed.add(r);
                 return sent;
             }, r -> {
@@ -116,9 +124,8 @@ class TrafficWatcherTest {
         assertSame(sent, watcher().handleHttpRequestToBeSent(broken));
         assertSame(sent, watcher().handleHttpRequestToBeSent(broken));
         assertEquals(List.of(broken, broken), passed);
-        assertEquals(1, errors.size(), errors.toString());
-        assertTrue(errors.get(0).startsWith("Hirdman Radar: traffic check skipped a request: "), errors.get(0));
-        assertTrue(errors.get(0).contains("broken toolSource"), errors.get(0));
+        assertEquals(List.of("Hirdman Radar: traffic check skipped a request"), errors);
+        assertEquals("broken toolSource", causes.get(0).getMessage());
     }
 
     static HttpResponseReceived response(ToolType tool) {
@@ -143,8 +150,8 @@ class TrafficWatcherTest {
         assertSame(received, watcher().handleHttpResponseReceived(proxy));
         assertSame(received, watcher().handleHttpResponseReceived(proxy));
         assertEquals(List.of(proxy, own, proxy, proxy), passed);
-        assertEquals(1, errors.size(), errors.toString());
-        assertTrue(errors.get(0).contains("odd response"), errors.get(0));
+        assertEquals(List.of("Hirdman Radar: login page check skipped a response"), errors);
+        assertEquals("odd response", causes.get(0).getMessage());
     }
 
     @Test
@@ -210,8 +217,8 @@ class TrafficWatcherTest {
         }, () -> "scan.hirdman.pro");
         watcher().handleHttpRequestToBeSent(request("a.example.com", true, ToolType.PROXY));
         watcher().drainSafely(T0);
-        assertEquals(1, errors.size());
-        assertTrue(errors.get(0).startsWith("Hirdman Radar: traffic check failed: "), errors.get(0));
+        assertEquals(List.of("Hirdman Radar: traffic check failed"), errors);
+        assertEquals("store broke", causes.get(0).getMessage());
     }
 
     @Test

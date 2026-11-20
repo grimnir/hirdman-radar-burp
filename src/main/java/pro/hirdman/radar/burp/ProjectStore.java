@@ -10,6 +10,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import pro.hirdman.radar.model.HostResult;
 import pro.hirdman.radar.model.ResultStore;
@@ -32,14 +33,17 @@ public final class ProjectStore {
 
     private final PersistedObject data;
     private final Consumer<String> errors;
+    private final BiConsumer<String, Throwable> failures;
     private final Set<String> dirty = ConcurrentHashMap.newKeySet();
     private ResultStore store;
     private boolean dropLegacy;
     private ScheduledExecutorService timer;
 
-    public ProjectStore(PersistedObject data, Consumer<String> errors) {
+    /** {@code errors} takes notes about saved data, {@code failures} unexpected exceptions with their stack. */
+    public ProjectStore(PersistedObject data, Consumer<String> errors, BiConsumer<String, Throwable> failures) {
         this.data = data;
         this.errors = errors;
+        this.failures = failures;
     }
 
     /** Reads the saved results and watches them for changes from then on. Data it could not read is kept aside first. */
@@ -146,7 +150,7 @@ public final class ProjectStore {
             }
         }
         if (failure != null) {
-            errors.accept("Hirdman Radar: results could not be saved: " + failure);
+            failures.accept("Hirdman Radar: results could not be saved", failure);
         } else if (dropLegacy) {
             data.deleteString(KEY);
             dropLegacy = false;

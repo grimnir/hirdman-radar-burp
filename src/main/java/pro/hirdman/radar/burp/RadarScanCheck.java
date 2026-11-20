@@ -8,7 +8,7 @@ import burp.api.montoya.scanner.scancheck.PassiveScanCheck;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import pro.hirdman.radar.model.HostResult;
 
@@ -20,17 +20,17 @@ public final class RadarScanCheck implements PassiveScanCheck {
     private final Function<String, Optional<HostResult>> rows;
     private final Function<HostResult, List<AuditIssue>> issues;
     private final Function<List<AuditIssue>, AuditResult> result;
-    private final Consumer<String> error;
+    private final BiConsumer<String, Throwable> error;
 
     /** {@code issues} is {@link BurpIssues#forScan}, which skips what Burp already has. */
     public RadarScanCheck(Function<String, Optional<HostResult>> rows, Function<HostResult, List<AuditIssue>> issues,
-            Consumer<String> error) {
+            BiConsumer<String, Throwable> error) {
         this(rows, issues, AuditResult::auditResult, error);
     }
 
     /** Burp's factories work only inside Burp, so tests pass their own. */
     RadarScanCheck(Function<String, Optional<HostResult>> rows, Function<HostResult, List<AuditIssue>> issues,
-            Function<List<AuditIssue>, AuditResult> result, Consumer<String> error) {
+            Function<List<AuditIssue>, AuditResult> result, BiConsumer<String, Throwable> error) {
         this.rows = rows;
         this.issues = issues;
         this.result = result;
@@ -49,7 +49,7 @@ public final class RadarScanCheck implements PassiveScanCheck {
             host = base.httpService().host();
             return result.apply(rows.apply(host).map(issues).orElse(List.of()));
         } catch (RuntimeException e) {
-            error.accept("Hirdman Radar: the scan check failed for " + host + ": " + e);
+            error.accept("Hirdman Radar: the scan check failed for " + host, e);
             return result.apply(List.of());
         }
     }
