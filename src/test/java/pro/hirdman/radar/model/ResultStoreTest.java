@@ -113,7 +113,7 @@ class ResultStoreTest {
         ResultStore s = new ResultStore();
         HostResult r = s.apply("example.com", check("vpn.example.com", true, 12, finding("stealer_logs", "high")), T1).orElseThrow();
         assertEquals(new HostResult("vpn.example.com", "example.com", HostStatus.CHECKED, 12, 3, 40, 7,
-                List.of(finding("stealer_logs", "high")), T1), r);
+                List.of(finding("stealer_logs", "high")), T1).withPrevious(HostResult.Previous.FIRST), r);
         assertEquals(Risk.HIGH, r.risk());
         assertTrue(r.hasLeaks());
         assertEquals(List.of(r), s.domain("example.com"));

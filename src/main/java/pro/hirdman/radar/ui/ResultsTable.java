@@ -44,13 +44,15 @@ public final class ResultsTable extends JTable {
             "Breach records with credentials for a site on this host, whoever they belong to. For a public service these are"
                     + " its users.",
             "Records in breached databases that mention the host, with an email or a URL.",
+            "Counts up or down since the host's previous check; new: a first check that found leaks. Hover a cell for the"
+                    + " previous counts.",
             "Newest known breach date among the 10 largest breach sources. Infostealer logs, database records and some"
                     + " sources have no date, so newer leaks may exist. Hover a cell for the sources.",
             "A login page seen in Burp traffic for this host.",
             "Hover a cell for the time of the last check.");
     /** The widest usual value of each model column; Host is measured on its rows. */
     private static final List<String> SAMPLES = List.of("", "Medium", "out", "000,000", "000,000",
-            "000,000", "0,000,000", "2024-03-21", "FortiGate SSL VPN", "Checked (nothing found)");
+            "000,000", "0,000,000", "Infostealer +000", "2024-03-21", "FortiGate SSL VPN", "Checked (nothing found)");
 
     /** Room for the sort arrow and the cell insets. */
     private static final int MARGIN = 24;
@@ -170,7 +172,7 @@ public final class ResultsTable extends JTable {
         };
     }
 
-    /** Latest breach shows the breach sources, Status the time of the check. */
+    /** Change shows the previous counts, Latest breach the breach sources, Status the time of the check. */
     @Override
     public String getToolTipText(MouseEvent e) {
         int row = rowAtPoint(e.getPoint());
@@ -180,6 +182,7 @@ public final class ResultsTable extends JTable {
         }
         int modelRow = convertRowIndexToModel(row);
         return switch (convertColumnIndexToModel(column)) {
+            case ResultsTableModel.CHANGE -> model.previousText(modelRow);
             case ResultsTableModel.LATEST -> model.sourcesText(modelRow);
             case ResultsTableModel.STATUS -> model.statusText(modelRow);
             default -> null;

@@ -108,13 +108,27 @@ public final class ResultStore {
         synchronized (this) {
             HostResult old = rows.get(h.get());
             String d = old != null ? old.domain() : HostNames.normalize(domain).orElse(ParentDomains.base(h.get()));
-            HostResult fresh = row(h.get(), d, e, now);
+            HostResult fresh = row(h.get(), d, e, now).withPrevious(previous(old, e.checkedAt(now)));
             row = old == null || old.login() == null ? fresh : fresh.withLogin(old.login());
             store(row);
         }
         fire(Set.of(row.domain()));
         checkListeners.forEach(l -> l.accept(row));
         return Optional.of(row);
+    }
+
+    /**
+     * The counts a check is compared with: the old row's when it was counted, else what that row compared with. A replay of
+     * the check already shown keeps its comparison; a host never checked before is a first check.
+     */
+    private static HostResult.Previous previous(HostResult old, Instant checkedAt) {
+        if (old == null || old.status() == HostStatus.FOUND) {
+            return HostResult.Previous.FIRST;
+        }
+        if (old.checked() && !checkedAt.equals(old.checkedAt())) {
+            return HostResult.Previous.of(old);
+        }
+        return old.previous();
     }
 
     private static HostResult row(String host, String domain, Check e, Instant now) {

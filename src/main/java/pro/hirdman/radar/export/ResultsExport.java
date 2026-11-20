@@ -3,6 +3,7 @@ package pro.hirdman.radar.export;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import java.time.Instant;
@@ -25,7 +26,7 @@ public final class ResultsExport {
 
     public static final String NOTE = "Counts only: no accounts, passwords, raw records or dumps.";
     static final String HEADER = "host,domain,status,risk,scope,stealer,work_accounts,personal_accounts,db_records,latest_breach,"
-            + "checked_at,breach_sources,findings,login_page";
+            + "checked_at,breach_sources,findings,login_page,change";
     private static final Gson PRETTY = new GsonBuilder().setPrettyPrinting().serializeNulls().disableHtmlEscaping().create();
 
     private ResultsExport() {
@@ -86,10 +87,25 @@ public final class ResultsExport {
                 findings.add(o);
             }
             h.add("findings", findings);
+            h.add("previous", previous(r.previous()));
             hosts.add(h);
         }
         root.add("hosts", hosts);
         return PRETTY.toJson(root) + "\n";
+    }
+
+    /** The counts of the check before, named as the host's own; null when not known. */
+    private static JsonElement previous(HostResult.Previous p) {
+        if (p == null) {
+            return JsonNull.INSTANCE;
+        }
+        JsonObject o = new JsonObject();
+        o.addProperty("stealer", p.stealer());
+        o.addProperty("work_accounts", p.work());
+        o.addProperty("personal_accounts", p.personal());
+        o.addProperty("db_records", p.dbRecords());
+        o.addProperty("checked_at", p.checkedAt() == null ? null : p.checkedAt().toString());
+        return o;
     }
 
     public static String csv(List<HostResult> rows, Predicate<String> inScope) {
@@ -103,7 +119,7 @@ public final class ResultsExport {
                     counted ? String.valueOf(r.stealer()) : "", counted ? String.valueOf(r.work()) : "",
                     counted ? String.valueOf(r.personal()) : "", counted ? String.valueOf(r.dbRecords()) : "",
                     Objects.toString(r.latestBreach(), ""), r.checkedAt() == null ? "" : r.checkedAt().toString(),
-                    sources(r), findings, r.login() == null ? "" : r.login().label() + " at " + r.login().path())
+                    sources(r), findings, r.login() == null ? "" : r.login().label() + " at " + r.login().path(), r.changeText())
                     .map(ResultsExport::cell).collect(Collectors.joining(","))).append('\n');
         }
         return b.toString();
