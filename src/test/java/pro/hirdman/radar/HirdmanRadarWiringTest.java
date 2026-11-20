@@ -49,14 +49,17 @@ class HirdmanRadarWiringTest {
     <T> T burp(Class<T> type) {
         return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type}, (p, m, args) -> {
             switch (m.getName()) {
-                case "equals":
+                case "equals" -> {
                     return p == args[0];
-                case "hashCode":
+                }
+                case "hashCode" -> {
                     return System.identityHashCode(p);
-                case "toString":
+                }
+                case "toString" -> {
                     return type.getSimpleName();
-                default:
-                    break;
+                }
+                default -> {
+                }
             }
             String call = type.getSimpleName() + "." + m.getName();
             calls.add(call);

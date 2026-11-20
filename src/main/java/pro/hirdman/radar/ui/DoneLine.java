@@ -11,6 +11,7 @@ import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.jobs.Job;
 import pro.hirdman.radar.jobs.JobKind;
 import pro.hirdman.radar.jobs.JobState;
@@ -44,7 +45,7 @@ final class DoneLine {
         }
     }
 
-    static String text(String domain, long withLeaks, long hosts) {
+    static String text(@Nullable String domain, long withLeaks, long hosts) {
         return "Done: " + domain + ", " + withLeaks + " of " + StatusText.count(hosts, "host") + " with leaks.";
     }
 }

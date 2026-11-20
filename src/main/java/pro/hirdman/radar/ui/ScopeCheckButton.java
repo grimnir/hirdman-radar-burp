@@ -9,6 +9,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import javax.swing.JButton;
 import javax.swing.SwingUtilities;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.Meta;
 import pro.hirdman.radar.config.Options;
 import pro.hirdman.radar.jobs.JobKind;
@@ -70,7 +71,7 @@ final class ScopeCheckButton {
     }
 
     /** What the in-scope hosts of the site map give; null when the site map could not be read. */
-    private ScopeCheck scopePlan(Options o) {
+    private @Nullable ScopeCheck scopePlan(Options o) {
         try {
             return ScopeCheck.plan(scopeHosts.get(), o.serverHost(), store::lastChecked, Instant.now());
         } catch (RuntimeException e) {
@@ -79,7 +80,7 @@ final class ScopeCheckButton {
         }
     }
 
-    private void askScope(ScopeCheck c, Integer hostsLeft) {
+    private void askScope(@Nullable ScopeCheck c, @Nullable Integer hostsLeft) {
         button.setEnabled(true);
         button.setText(TEXT);
         if (c == null) {

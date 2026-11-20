@@ -6,6 +6,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.issues.IssuePlanner;
 import pro.hirdman.radar.jobs.StatusText;
 import pro.hirdman.radar.model.HostResult;
@@ -37,14 +38,15 @@ public final class ResultsSummary {
         }
         b.append("Since the previous check:\n\n");
         for (HostResult r : changed) {
-            b.append("- ").append(r.host()).append(": ").append(r.previous().first() ? "new (first check)" : r.changeText())
+            boolean first = r.previous() != null && r.previous().first();
+            b.append("- ").append(r.host()).append(": ").append(first ? "new (first check)" : r.changeText())
                     .append('\n');
         }
         b.append('\n');
     }
 
     /** Host names are checked names and the cells are numbers and dates, so nothing needs Markdown escaping. */
-    public static String markdown(String domain, List<HostResult> rows, String site, Instant now) {
+    public static String markdown(String domain, List<HostResult> rows, @Nullable String site, Instant now) {
         long notCheckedYet = rows.stream().filter(r -> r.status() == HostStatus.FOUND).count();
         long failed = rows.stream().filter(r -> r.status() == HostStatus.NOT_CHECKED).count();
         List<HostResult> leaks = rows.stream().filter(HostResult::hasLeaks)

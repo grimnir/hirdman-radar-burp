@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.Json;
 import pro.hirdman.radar.api.ServerEvent.BreachSource;
 import pro.hirdman.radar.api.ServerEvent.Finding;
@@ -34,14 +35,15 @@ public final class ResultsJson {
     /** The longest string a saved row may hold; issue texts are cut well below it. */
     static final int MAX_STRING = 20_000;
 
-    private record SavedFinding(String kind, String severity, String confidence, String name, String detail,
-            JsonElement background, JsonElement remediation, JsonElement review) {
+    private record SavedFinding(@Nullable String kind, @Nullable String severity, @Nullable String confidence,
+            @Nullable String name, @Nullable String detail, @Nullable JsonElement background,
+            @Nullable JsonElement remediation, @Nullable JsonElement review) {
     }
 
     private record SavedLogin(String kind, String label, String path) {
     }
 
-    private record SavedPrevious(int stealer, int work, int personal, long dbRecords, String checkedAt) {
+    private record SavedPrevious(int stealer, int work, int personal, long dbRecords, @Nullable String checkedAt) {
     }
 
     /**
@@ -49,8 +51,8 @@ public final class ResultsJson {
      * unknown; older plugins skip it, rows saved before it load without it.
      */
     private record Row(String host, String domain, String status, int stealer, int work, int personal, long dbRecords,
-            List<SavedFinding> findings, String checkedAt, List<BreachSource> sources, SavedLogin login, Boolean replayed,
-            SavedPrevious previous) {
+            List<SavedFinding> findings, @Nullable String checkedAt, List<BreachSource> sources, @Nullable SavedLogin login,
+            @Nullable Boolean replayed, @Nullable SavedPrevious previous) {
     }
 
     private record Saved(int v, List<String> texts, List<Row> hosts) {
@@ -78,33 +80,33 @@ public final class ResultsJson {
         return Json.GSON.toJson(new Saved(VERSION, List.copyOf(texts.keySet()), hosts));
     }
 
-    private static SavedPrevious saved(HostResult.Previous p) {
+    private static @Nullable SavedPrevious saved(HostResult.@Nullable Previous p) {
         return p == null ? null : new SavedPrevious(p.stealer(), p.work(), p.personal(), p.dbRecords(),
                 p.checkedAt() == null ? null : p.checkedAt().toString());
     }
 
-    private static HostResult.Previous restored(SavedPrevious p) {
+    private static HostResult.@Nullable Previous restored(@Nullable SavedPrevious p) {
         return p == null ? null
                 : new HostResult.Previous(p.stealer(), p.work(), p.personal(), p.dbRecords(), instant(p.checkedAt()));
     }
 
-    private static JsonElement number(Map<String, Integer> texts, String text) {
+    private static @Nullable JsonElement number(Map<String, Integer> texts, @Nullable String text) {
         return text == null ? null : new JsonPrimitive(texts.computeIfAbsent(text, t -> texts.size()));
     }
 
     /** Never throws: unreadable data gives an empty store and one line in {@code errors}. */
-    public static ResultStore read(String json, Consumer<String> errors) {
+    public static ResultStore read(@Nullable String json, Consumer<String> errors) {
         ResultStore store = new ResultStore();
         readInto(store, json, errors);
         return store;
     }
 
     /** Adds the saved rows to {@code store}, up to {@link #MAX_ROWS} in the store. Never throws; problems go to {@code errors}. */
-    public static void readInto(ResultStore store, String json, Consumer<String> errors) {
+    public static void readInto(ResultStore store, @Nullable String json, Consumer<String> errors) {
         readInto(store, json, errors, MAX_CHARS, MAX_ROWS);
     }
 
-    static void readInto(ResultStore store, String json, Consumer<String> errors, int maxChars, int maxRows) {
+    static void readInto(ResultStore store, @Nullable String json, Consumer<String> errors, int maxChars, int maxRows) {
         if (json == null || json.isBlank()) {
             return;
         }
@@ -167,7 +169,7 @@ public final class ResultsJson {
     }
 
     /** The top-level JSON object, or null for anything else. */
-    private static JsonObject object(String json) {
+    private static @Nullable JsonObject object(String json) {
         try {
             return JsonParser.parseString(json) instanceof JsonObject o ? o : null;
         } catch (RuntimeException e) {
@@ -210,13 +212,13 @@ public final class ResultsJson {
     }
 
     /** A version or a text number: plain digits only, so exponents, fractions and huge values give -1. */
-    private static int index(JsonElement e) {
+    private static int index(@Nullable JsonElement e) {
         return e instanceof JsonPrimitive p && p.isNumber() && p.getAsString().matches("\\d{1,9}")
                 ? Integer.parseInt(p.getAsString()) : -1;
     }
 
     /** The text itself (version 1) or its number in {@code texts}; anything else is no text. */
-    private static String text(JsonElement e, List<String> texts) {
+    private static @Nullable String text(@Nullable JsonElement e, List<String> texts) {
         if (e instanceof JsonPrimitive p && p.isString()) {
             return p.getAsString();
         }
@@ -224,7 +226,7 @@ public final class ResultsJson {
         return i >= 0 && i < texts.size() ? texts.get(i) : null;
     }
 
-    private static Optional<HostStatus> status(String name) {
+    private static Optional<HostStatus> status(@Nullable String name) {
         for (HostStatus s : HostStatus.values()) {
             if (s.name().equals(name)) {
                 return Optional.of(s);
@@ -233,7 +235,7 @@ public final class ResultsJson {
         return Optional.empty();
     }
 
-    private static Instant instant(String s) {
+    private static @Nullable Instant instant(@Nullable String s) {
         if (s == null) {
             return null;
         }

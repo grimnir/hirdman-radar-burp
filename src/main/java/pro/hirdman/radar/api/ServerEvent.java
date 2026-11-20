@@ -7,12 +7,13 @@ import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
 
 /** Job events the plugin acts on. */
 public sealed interface ServerEvent {
 
     /** {@code cached} is true when the server replays a saved scan instead of running one. */
-    record ScanStarted(Integer hosts, boolean cached) implements ServerEvent {
+    record ScanStarted(@Nullable Integer hosts, boolean cached) implements ServerEvent {
     }
 
     record Queued(int position, int etaSec) implements ServerEvent {
@@ -52,8 +53,8 @@ public sealed interface ServerEvent {
      * newer servers only: when the host was checked, and whether the result is a saved one rather than a check just now.
      */
     record Check(boolean root, String domain, int hcCorpFound, int hcOriginFound, long dbEmailCount, long dbUrlCount,
-            int stealerCount, Boolean hcChecked, List<Finding> findings, List<BreachSource> breachSources, String scannedAt,
-            Boolean replayed) implements ServerEvent {
+            int stealerCount, @Nullable Boolean hcChecked, List<Finding> findings, List<BreachSource> breachSources,
+            @Nullable String scannedAt, @Nullable Boolean replayed) implements ServerEvent {
 
         public Check {
             findings = Json.list(findings);
@@ -61,13 +62,13 @@ public sealed interface ServerEvent {
         }
 
         public Check(boolean root, String domain, int hcCorpFound, int hcOriginFound, long dbEmailCount, long dbUrlCount,
-                int stealerCount, Boolean hcChecked, List<Finding> findings, List<BreachSource> breachSources) {
+                int stealerCount, @Nullable Boolean hcChecked, List<Finding> findings, List<BreachSource> breachSources) {
             this(root, domain, hcCorpFound, hcOriginFound, dbEmailCount, dbUrlCount, stealerCount, hcChecked, findings,
                     breachSources, null, null);
         }
 
         public Check(boolean root, String domain, int hcCorpFound, int hcOriginFound, long dbEmailCount, long dbUrlCount,
-                int stealerCount, Boolean hcChecked, List<Finding> findings) {
+                int stealerCount, @Nullable Boolean hcChecked, List<Finding> findings) {
             this(root, domain, hcCorpFound, hcOriginFound, dbEmailCount, dbUrlCount, stealerCount, hcChecked, findings, List.of());
         }
 
@@ -100,8 +101,8 @@ public sealed interface ServerEvent {
     }
 
     /** {@code review}: one plain line from newer servers on what a full HIRDMAN review shows for this kind, or null. */
-    record Finding(String kind, String severity, String confidence, String name, String detail, String background,
-            String remediation, String review) {
+    record Finding(@Nullable String kind, @Nullable String severity, @Nullable String confidence, @Nullable String name,
+            @Nullable String detail, @Nullable String background, @Nullable String remediation, @Nullable String review) {
 
         /** Issue texts are cut to this length anyway; longer ones are cut before they are kept. */
         static final int MAX_TEXT = 10_000;
@@ -119,16 +120,16 @@ public sealed interface ServerEvent {
             review = shared(Json.oneLine(review));
         }
 
-        public Finding(String kind, String severity, String confidence, String name, String detail, String background,
-                String remediation) {
+        public Finding(@Nullable String kind, @Nullable String severity, @Nullable String confidence, @Nullable String name,
+                @Nullable String detail, @Nullable String background, @Nullable String remediation) {
             this(kind, severity, confidence, name, detail, background, remediation, null);
         }
 
-        private static String shared(String s) {
+        private static @Nullable String shared(@Nullable String s) {
             return Json.shared(s);
         }
 
-        private static String cut(String s, int max) {
+        private static @Nullable String cut(@Nullable String s, int max) {
             return s != null && s.length() > max ? s.substring(0, max) : s;
         }
     }
@@ -137,7 +138,7 @@ public sealed interface ServerEvent {
      * One breach the host's records come from. The name is one plain line; the date is kept only as
      * YYYY, YYYY-MM or YYYY-MM-DD (the start of what the server sent), otherwise null.
      */
-    record BreachSource(String name, String date, int count) {
+    record BreachSource(@Nullable String name, @Nullable String date, int count) {
 
         private static final Pattern DATE = Pattern.compile("\\d{4}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\\d|3[01]))?)?");
 

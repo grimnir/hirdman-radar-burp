@@ -202,9 +202,11 @@ class ResultsTableModelTest {
         ResultsTableModel m = model(h -> !h.startsWith("old2"));
         assertEquals("vpn.example.com", m.rowAt(0).host());
         assertEquals(List.of("old.example.com", "old2.example.com"), m.failed());
-        assertEquals("Host,Risk,Scope,Infostealer,Work,Host logins,DB records,Change,Latest breach,Login page,Status\n"
-                + "vpn.example.com,High,in,12,3,40,7,new,,,Checked (leaks found)\n"
-                + "old2.example.com,,out,,,,,,,,Check failed\n", m.csv(new int[] {0, 2}));
+        assertEquals("""
+                Host,Risk,Scope,Infostealer,Work,Host logins,DB records,Change,Latest breach,Login page,Status
+                vpn.example.com,High,in,12,3,40,7,new,,,Checked (leaks found)
+                old2.example.com,,out,,,,,,,,Check failed
+                """, m.csv(new int[] {0, 2}));
         store.noteLogin("vpn.example.com", new LoginPage(LoginPage.Kind.KNOWN_PATH, "FortiGate SSL VPN", "/remote/login"));
         m.refresh();
         assertEquals("FortiGate SSL VPN", m.getValueAt(0, ResultsTableModel.LOGIN));
@@ -280,7 +282,7 @@ class ResultsTableModelTest {
         store.noteLogin("a.example.com", new LoginPage(LoginPage.Kind.KNOWN_PATH, "=HYPERLINK(\"x\"),y", "/login"));
         ResultsTableModel m = model(h -> true);
         assertEquals("a.example.com,,in,0,0,0,0,,,\"'=HYPERLINK(\"\"x\"\"),y\",Checked (nothing found)",
-                m.csv(new int[] {0}).split("\n")[1]);
+                m.csv(new int[] {0}).lines().toList().get(1));
     }
 
     @Test

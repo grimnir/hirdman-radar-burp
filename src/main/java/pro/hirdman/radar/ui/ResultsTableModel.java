@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import javax.swing.table.AbstractTableModel;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.ServerEvent.BreachSource;
 import pro.hirdman.radar.export.ResultsExport;
 import pro.hirdman.radar.jobs.StatusText;
@@ -44,7 +45,7 @@ public final class ResultsTableModel extends AbstractTableModel {
 
     private final ResultStore store;
     private final Predicate<String> inScope;
-    private String domain;
+    private @Nullable String domain;
     private ResultsFilter filter = ResultsFilter.ALL;
     private List<Row> rows = List.of();
     private String summary = "";
@@ -59,11 +60,11 @@ public final class ResultsTableModel extends AbstractTableModel {
         this.inScope = inScope;
     }
 
-    public String domain() {
+    public @Nullable String domain() {
         return domain;
     }
 
-    public void setDomain(String d) {
+    public void setDomain(@Nullable String d) {
         domain = d;
         scopeCache.clear();
         refresh();
@@ -197,7 +198,7 @@ public final class ResultsTableModel extends AbstractTableModel {
     }
 
     /** "Checked 2026-11-18 11:05 UTC" ("Last tried" after a failed check) for the Status cell's tooltip; null if never checked. */
-    public String statusText(int row) {
+    public @Nullable String statusText(int row) {
         HostResult h = rows.get(row).result();
         if (h.checkedAt() == null || h.status() == HostStatus.FOUND) {
             return null;
@@ -206,7 +207,7 @@ public final class ResultsTableModel extends AbstractTableModel {
     }
 
     /** The previous check's counts for the Change cell's tooltip; null when there is nothing to compare. */
-    public String previousText(int row) {
+    public @Nullable String previousText(int row) {
         HostResult h = rows.get(row).result();
         HostResult.Previous p = h.previous();
         if (!h.checked() || p == null) {
@@ -223,7 +224,7 @@ public final class ResultsTableModel extends AbstractTableModel {
      * "Breach sources: name count (date or no date); ..." and a note that newer leaks may exist, for the row's tooltip, or null
      * without sources. Never starts with "<html>".
      */
-    public String sourcesText(int row) {
+    public @Nullable String sourcesText(int row) {
         List<BreachSource> sources = rows.get(row).result().sources();
         return sources.isEmpty() ? null : "Breach sources: " + sources.stream()
                 .map(s -> s.name() + " " + s.count() + " (" + Objects.requireNonNullElse(s.date(), "no date") + ")")

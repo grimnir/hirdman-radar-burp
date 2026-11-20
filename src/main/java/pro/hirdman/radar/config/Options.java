@@ -1,6 +1,8 @@
 package pro.hirdman.radar.config;
 
+import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.ConnectionSettings;
 import pro.hirdman.radar.issues.IssueOptions;
 import pro.hirdman.radar.model.Risk;
@@ -33,7 +35,7 @@ public record Options(String serverUrl, boolean autoIssues, boolean includeOutOf
     }
 
     /** The server as scheme://host[:port], or null when the Server URL cannot be used or the project is private. */
-    private String site() {
+    private @Nullable String site() {
         if (offForProject) {
             return null;
         }
@@ -45,7 +47,7 @@ public record Options(String serverUrl, boolean autoIssues, boolean includeOutOf
     }
 
     /** The server's host name, or null when the Server URL cannot be used. */
-    public String serverHost() {
+    public @Nullable String serverHost() {
         try {
             return ConnectionSettings.of(serverUrl).host();
         } catch (IllegalArgumentException e) {
@@ -59,7 +61,7 @@ public record Options(String serverUrl, boolean autoIssues, boolean includeOutOf
             ConnectionSettings.of(serverUrl);
             return Optional.empty();
         } catch (IllegalArgumentException e) {
-            return Optional.of(e.getMessage());
+            return Optional.of(Objects.requireNonNull(e.getMessage()));
         }
     }
 }

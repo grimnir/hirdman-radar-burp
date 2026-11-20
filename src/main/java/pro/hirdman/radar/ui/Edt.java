@@ -12,6 +12,8 @@ public final class Edt {
     }
 
     /** Runs {@code work} on the event thread and returns its result; called on that thread, it just runs. */
+    // invokeAndWait has run work by the return, so out holds its result; NullAway cannot see that.
+    @SuppressWarnings("NullAway")
     public static <T> T call(Supplier<T> work) {
         if (SwingUtilities.isEventDispatchThread()) {
             return work.get();

@@ -15,8 +15,10 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.Json;
 import pro.hirdman.radar.api.ServerEvent.BreachSource;
 import pro.hirdman.radar.api.ServerEvent.Finding;
@@ -63,11 +65,11 @@ public final class ResultsImport {
     }
 
     /** The rows of an export, in file order; {@code now} bounds check times. */
-    public static List<HostResult> parse(String json, Instant now) throws Refused {
+    public static List<HostResult> parse(@Nullable String json, Instant now) throws Refused {
         return parse(json, now, MAX_HOSTS);
     }
 
-    static List<HostResult> parse(String json, Instant now, int maxHosts) throws Refused {
+    static List<HostResult> parse(@Nullable String json, Instant now, int maxHosts) throws Refused {
         if (json != null && json.length() > MAX_CHARS) {
             throw new Refused("the file is too large");
         }
@@ -100,7 +102,7 @@ public final class ResultsImport {
     }
 
     /** Strict JSON, one value and nothing after it; null when the text is not that. */
-    private static JsonElement read(String json) {
+    private static @Nullable JsonElement read(String json) {
         try {
             JsonReader reader = new JsonReader(new StringReader(json));
             reader.setStrictness(Strictness.STRICT);
@@ -173,7 +175,7 @@ public final class ResultsImport {
                 false, previous);
     }
 
-    private static HostStatus status(String label, String at) throws Refused {
+    private static HostStatus status(@Nullable String label, String at) throws Refused {
         for (HostStatus s : HostStatus.values()) {
             if (s.label().equals(label)) {
                 return s;
@@ -222,7 +224,7 @@ public final class ResultsImport {
         return out;
     }
 
-    private static LoginPage login(JsonObject o, String at) throws Refused {
+    private static @Nullable LoginPage login(JsonObject o, String at) throws Refused {
         if (!present(o, "login_page")) {
             return null;
         }
@@ -235,7 +237,7 @@ public final class ResultsImport {
                 .orElseThrow(() -> new Refused(at + "login_page is not one the plugin writes"));
     }
 
-    private static Previous previous(JsonObject o, String at, Instant now) throws Refused {
+    private static @Nullable Previous previous(JsonObject o, String at, Instant now) throws Refused {
         if (!present(o, "previous")) {
             return null;
         }
@@ -262,7 +264,7 @@ public final class ResultsImport {
     }
 
     /** A string field, or null when absent or null. */
-    private static String text(JsonObject o, String name, String at) throws Refused {
+    private static @Nullable String text(JsonObject o, String name, String at) throws Refused {
         if (!present(o, name)) {
             return null;
         }
@@ -276,7 +278,7 @@ public final class ResultsImport {
     }
 
     /** A text shown in the tab: one plain line, as the export writes it. */
-    private static String line(JsonObject o, String name, String at) throws Refused {
+    private static @Nullable String line(JsonObject o, String name, String at) throws Refused {
         return Json.oneLine(text(o, name, at));
     }
 
@@ -304,7 +306,7 @@ public final class ResultsImport {
     }
 
     /** An ISO time no later than a day past {@code now}, or null when absent. */
-    private static Instant time(JsonObject o, String name, String at, Instant now) throws Refused {
+    private static @Nullable Instant time(JsonObject o, String name, String at, Instant now) throws Refused {
         String s = text(o, name, at);
         if (s == null) {
             return null;
@@ -322,8 +324,8 @@ public final class ResultsImport {
     }
 
     /** A name from the file, quoted, on one line and cut short. */
-    private static String quote(String s) {
-        String line = s == null ? "" : Json.oneLine(s);
+    private static String quote(@Nullable String s) {
+        String line = Objects.toString(Json.oneLine(s), "");
         return "\"" + (line.length() > MAX_FIELD_SHOWN ? line.substring(0, MAX_FIELD_SHOWN) + "..." : line) + "\"";
     }
 }

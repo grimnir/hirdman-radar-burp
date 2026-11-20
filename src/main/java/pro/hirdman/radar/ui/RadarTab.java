@@ -54,6 +54,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.event.PopupMenuEvent;
 import javax.swing.event.PopupMenuListener;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.Version;
 import pro.hirdman.radar.api.Meta;
 import pro.hirdman.radar.api.Radar;
@@ -105,7 +106,7 @@ public final class RadarTab extends JPanel {
     private final JobQueue queue;
     private final Supplier<Options> options;
     private final ProjectSwitch projectSwitch;
-    private final ToIntFunction<List<HostResult>> report;
+    private final @Nullable ToIntFunction<List<HostResult>> report;
     private final Function<List<String>, String> addToSiteMap;
     private final Function<List<HostResult>, String> toOrganizer;
     private final Executor background;
@@ -179,10 +180,10 @@ public final class RadarTab extends JPanel {
     private final JMenuItem removeItem = new JMenuItem("Remove from results");
     private boolean updatingDomains;
     private boolean anyStored;
-    private String tipHost = "";
+    private @Nullable String tipHost = "";
     /** The job a "Scan example.com instead" link replaces, and its kind. */
-    private Job hintJob;
-    private JobKind hintKind;
+    private @Nullable Job hintJob;
+    private @Nullable JobKind hintKind;
 
     /**
      * {@code report} turns the selected rows into Burp issues and returns how many it created, null where Burp has no
@@ -190,7 +191,7 @@ public final class RadarTab extends JPanel {
      * returns the event log line; {@code scopeHosts} lists the in-scope hosts of the site map. Both run in the background.
      */
     public RadarTab(MontoyaApi api, ResultStore store, JobQueue queue, MetaGate gate, Supplier<Options> options,
-            ProjectSwitch projectSwitch, Supplier<Radar> radar, ToIntFunction<List<HostResult>> report,
+            ProjectSwitch projectSwitch, Supplier<Radar> radar, @Nullable ToIntFunction<List<HostResult>> report,
             Function<List<String>, String> addToSiteMap, Function<List<HostResult>, String> toOrganizer,
             Supplier<List<String>> scopeHosts, BooleanSupplier verifyTls, Supplier<Component> dialogParent) {
         this(api, store, queue, gate, options, projectSwitch, radar, report, addToSiteMap, toOrganizer, scopeHosts, verifyTls,
@@ -198,7 +199,7 @@ public final class RadarTab extends JPanel {
     }
 
     RadarTab(MontoyaApi api, ResultStore store, JobQueue queue, MetaGate gate, Supplier<Options> options,
-            ProjectSwitch projectSwitch, Supplier<Radar> radar, ToIntFunction<List<HostResult>> report,
+            ProjectSwitch projectSwitch, Supplier<Radar> radar, @Nullable ToIntFunction<List<HostResult>> report,
             Function<List<String>, String> addToSiteMap, Function<List<HostResult>, String> toOrganizer,
             Supplier<List<String>> scopeHosts, BooleanSupplier verifyTls, Supplier<Component> dialogParent, Executor background) {
         super(new BorderLayout(0, 6));
@@ -599,7 +600,7 @@ public final class RadarTab extends JPanel {
     }
 
     /** The line under the field, with a link to the registrable domain when {@code base} is set. */
-    private void showHint(String text, String base) {
+    private void showHint(String text, @Nullable String base) {
         domainHint.setText(text);
         domainHint.setVisible(!text.isEmpty());
         hintButton.setText(base == null ? "" : "Scan " + base);
@@ -608,13 +609,17 @@ public final class RadarTab extends JPanel {
 
     /** Replaces the job of the host typed with one for its domain. */
     private void scanHintDomain() {
+        JobKind kind = hintKind;
+        if (kind == null) {
+            return;
+        }
         String base = ParentDomains.base(domainField.getText().trim());
         if (hintJob != null) {
             queue.cancel(hintJob);
             hintJob = null;
         }
         domainField.setText(base);
-        submit(hintKind);
+        submit(kind);
     }
 
     /** Cmd on macOS, Ctrl elsewhere; Ctrl without a screen. */
@@ -695,6 +700,11 @@ public final class RadarTab extends JPanel {
     }
 
     private void createIssues(List<HostResult> rows) {
+        // The menu item is there only where Burp has issues.
+        ToIntFunction<List<HostResult>> report = this.report;
+        if (report == null) {
+            return;
+        }
         long out = options.get().includeOutOfScope() ? 0
                 : rows.stream().filter(r -> r.hasLeaks() && !model.inScope(r.host())).count();
         background.execute(() -> {
@@ -783,7 +793,8 @@ public final class RadarTab extends JPanel {
     }
 
     /** Null while rows are shown; otherwise why there are none: the filter, a job on its way, or nothing done yet. */
-    static String emptyText(String domain, ResultsFilter filter, int shown, int total, boolean anyStored, boolean working) {
+    static @Nullable String emptyText(@Nullable String domain, ResultsFilter filter, int shown, int total, boolean anyStored,
+            boolean working) {
         if (shown > 0) {
             return null;
         }
@@ -796,7 +807,7 @@ public final class RadarTab extends JPanel {
         return anyStored && domain != null ? "No results for " + domain + "." : EMPTY;
     }
 
-    static String privateTip(String serverHost) {
+    static String privateTip(@Nullable String serverHost) {
         return "For engagements where host names must not leave Burp. While ticked, this project sends nothing to "
                 + (serverHost == null ? "the radar server" : serverHost) + ": no checks, no subdomain search, no traffic checks. "
                 + "Results already here stay. Other projects are not affected.";

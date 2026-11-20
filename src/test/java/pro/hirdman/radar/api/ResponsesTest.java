@@ -106,6 +106,6 @@ class ResponsesTest {
         assertEquals("plain", Json.oneLine("  plain "));
         assertEquals("a b", Json.oneLine("a\u0000\u001b\u0085b"));
         // Bidi overrides could make a server string read differently in Burp.
-        assertEquals("evil txt.exe", Json.oneLine("evil‮txt.exe"));
+        assertEquals("evil txt.exe", Json.oneLine("evil\u202Etxt.exe"));
     }
 }

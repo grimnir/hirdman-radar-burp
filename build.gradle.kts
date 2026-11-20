@@ -1,7 +1,11 @@
+import net.ltgt.gradle.errorprone.CheckSeverity
+import net.ltgt.gradle.errorprone.errorprone
+
 plugins {
     java
     jacoco
     id("info.solidsoft.pitest") version "1.19.0"
+    id("net.ltgt.errorprone") version "5.2.0"
 }
 
 group = "pro.hirdman"
@@ -30,12 +34,31 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    // Checks at compile time only: nothing of them goes into the jar.
+    errorprone("com.google.errorprone:error_prone_core:2.53.0")
+    errorprone("com.uber.nullaway:nullaway:0.14.4")
+    compileOnly("org.jspecify:jspecify:1.0.1")
+    testCompileOnly("org.jspecify:jspecify:1.0.1")
 }
 
 tasks.withType<JavaCompile>().configureEach {
     options.release = 21
     options.encoding = "UTF-8"
     options.compilerArgs.addAll(listOf("-Xlint:all,-serial", "-Werror"))
+    // Error Prone warnings fail the build through -Werror. Null is a value only where @Nullable says so.
+    options.errorprone {
+        check("NullAway", CheckSeverity.ERROR)
+        option("NullAway:AnnotatedPackages", "pro.hirdman.radar")
+        // Boolean.TRUE reads clearer than a boxed literal where Swing and JUnit take an Object.
+        disable("BooleanLiteral")
+    }
+}
+
+// Tests pass null on purpose to check the guards, so NullAway reads main code only. Their durations mirror the
+// server's seconds, and the Burp fakes compare by identity.
+tasks.compileTestJava {
+    options.errorprone.disable("NullAway", "CanonicalDuration", "ReferenceEquality")
 }
 
 tasks.processResources {

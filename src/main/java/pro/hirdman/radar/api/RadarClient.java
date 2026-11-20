@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.Version;
 
 /** Radar API client; every request goes through the given transport and only to the configured server. */
@@ -35,7 +36,7 @@ public final class RadarClient implements Radar {
     private final Transport transport;
 
     /** A client for the Server URL setting, or null when the setting is not a usable URL. */
-    public static RadarClient of(String serverUrl, Transport transport) {
+    public static @Nullable RadarClient of(@Nullable String serverUrl, Transport transport) {
         try {
             return new RadarClient(ConnectionSettings.of(serverUrl), transport);
         } catch (IllegalArgumentException e) {
@@ -104,7 +105,7 @@ public final class RadarClient implements Radar {
         return "/api/v1/jobs/" + jobId;
     }
 
-    private Reply send(String method, String pathAndQuery, String body, Duration timeout) throws ApiException {
+    private Reply send(String method, String pathAndQuery, @Nullable String body, Duration timeout) throws ApiException {
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("User-Agent", "HirdmanRadar/" + Version.current());
         headers.put("Accept", "application/json");

@@ -19,6 +19,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.issues.IssuePlanner;
 import pro.hirdman.radar.jobs.StatusText;
 
@@ -131,7 +132,7 @@ public final class BurpSiteMap {
     }
 
     /** One site map walk for the whole batch; null when Burp refused, which turns automatic adds off. */
-    private Put put(List<String> hosts) {
+    private @Nullable Put put(List<String> hosts) {
         Set<String> roots = new LinkedHashSet<>();
         hosts.forEach(h -> roots.add(IssuePlanner.baseUrl(h)));
         synchronized (walkLock) {
@@ -224,7 +225,7 @@ public final class BurpSiteMap {
     }
 
     /** https://host/ for an https URL on the default port, else null. Runs for every site map item, so no URI parsing. */
-    static String root(String url) {
+    static @Nullable String root(@Nullable String url) {
         if (url == null || !url.regionMatches(true, 0, "https://", 0, 8)) {
             return null;
         }

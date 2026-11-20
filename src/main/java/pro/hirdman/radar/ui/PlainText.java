@@ -7,6 +7,7 @@ import javax.swing.JLabel;
 import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 import javax.swing.plaf.basic.BasicHTML;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Components that show server reasons, typed domains or host names: never let Swing read them as HTML. A text constructor
@@ -23,7 +24,7 @@ public final class PlainText {
     }
 
     /** Swing's tooltip reads "<html>" text as HTML whatever the component says, so such text gets a leading space. */
-    public static void tip(JComponent c, String text) {
+    public static void tip(JComponent c, @Nullable String text) {
         c.setToolTipText(text != null && BasicHTML.isHTMLString(text) ? " " + text : text);
     }
 

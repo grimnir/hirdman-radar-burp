@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.ServerEvent.Check;
 import pro.hirdman.radar.menu.ParentDomains;
 
@@ -99,7 +100,7 @@ public final class ResultStore {
     }
 
     /** Records a check. A host already in the store keeps its domain and login page; an invalid host is ignored. */
-    public Optional<HostResult> apply(String domain, Check e, Instant now) {
+    public Optional<HostResult> apply(@Nullable String domain, Check e, Instant now) {
         Optional<String> h = HostNames.normalize(e.domain());
         if (h.isEmpty()) {
             return Optional.empty();
@@ -121,7 +122,7 @@ public final class ResultStore {
      * The counts a check is compared with: the old row's when it was counted, else what that row compared with. A replay of
      * the check already shown keeps its comparison; a host never checked before is a first check.
      */
-    private static HostResult.Previous previous(HostResult old, Instant checkedAt) {
+    private static HostResult.@Nullable Previous previous(@Nullable HostResult old, Instant checkedAt) {
         if (old == null || old.status() == HostStatus.FOUND) {
             return HostResult.Previous.FIRST;
         }
@@ -231,7 +232,7 @@ public final class ResultStore {
      * For Burp's traffic threads: no lock and no regex. The name is only lower-cased and stripped of a trailing dot, so
      * anything odd simply finds no row.
      */
-    public Optional<HostResult> peek(String host) {
+    public Optional<HostResult> peek(@Nullable String host) {
         if (host == null) {
             return Optional.empty();
         }
@@ -285,7 +286,7 @@ public final class ResultStore {
     }
 
     /** Takes a host out of both maps under the lock; returns its row, or null when it was not there. */
-    private HostResult drop(String host) {
+    private @Nullable HostResult drop(String host) {
         HostResult gone = rows.remove(host);
         if (gone == null) {
             return null;

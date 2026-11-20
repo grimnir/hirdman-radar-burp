@@ -54,6 +54,8 @@ public final class ScopeIssues implements ScopeChangeHandler {
         }
     }
 
+    // Only the issues matter here, not how many were made.
+    @SuppressWarnings("ReturnValueIgnored")
     private void pass() {
         pending.set(false);
         try {

@@ -25,6 +25,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.Version;
 import pro.hirdman.radar.config.Options;
 import pro.hirdman.radar.export.ResultsExport;
@@ -115,7 +116,7 @@ final class ExportActions {
         background.execute(() -> write(path.get(), ext, domain, rows, site));
     }
 
-    private void write(Path path, String ext, String domain, List<HostResult> rows, String site) {
+    private void write(Path path, String ext, @Nullable String domain, List<HostResult> rows, @Nullable String site) {
         try {
             String text = ext.equals("json")
                     ? ResultsExport.json(domain, rows, inScope, site, Version.current(), Instant.now())
@@ -171,7 +172,7 @@ final class ExportActions {
         SwingUtilities.invokeLater(() -> message.accept(importedText(name, m)));
     }
 
-    private void refuse(Path path, String name, String why) {
+    private void refuse(Path path, String name, @Nullable String why) {
         log.error("Hirdman Radar: import of " + path + " refused: " + why);
         SwingUtilities.invokeLater(() -> message.accept("Could not import " + name + ": " + why + "." + IMPORT_ONLY));
     }

@@ -4,11 +4,13 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
 
 /** A login page seen in Burp's traffic on a host. Labels come from a fixed list, so saved data cannot bring in its own text. */
 public record LoginPage(Kind kind, String label, String path) {
@@ -47,7 +49,7 @@ public record LoginPage(Kind kind, String label, String path) {
         LABELS.add(PASSWORD_FORM);
     }
 
-    public boolean betterThan(LoginPage other) {
+    public boolean betterThan(@Nullable LoginPage other) {
         return other == null || kind.compareTo(other.kind) > 0;
     }
 
@@ -56,12 +58,13 @@ public record LoginPage(Kind kind, String label, String path) {
      * 200 that nothing cheaper matched. Only the start of the path is kept: deeper segments often carry reset or session
      * tokens, and the path ends up in issues and exports.
      */
-    public static Optional<LoginPage> detect(String path, int status, String wwwAuthenticate, BooleanSupplier passwordField) {
+    public static Optional<LoginPage> detect(@Nullable String path, int status, @Nullable String wwwAuthenticate,
+            BooleanSupplier passwordField) {
         String p = path == null || path.isEmpty() ? "/" : path;
         if (status < 400 || status == 401) {
             String prefix = knownPrefix(p);
             if (prefix != null) {
-                return Optional.of(new LoginPage(Kind.KNOWN_PATH, PATHS.get(prefix), prefix));
+                return Optional.of(new LoginPage(Kind.KNOWN_PATH, Objects.requireNonNull(PATHS.get(prefix)), prefix));
             }
         }
         if (status == 401 && wwwAuthenticate != null) {
@@ -77,10 +80,11 @@ public record LoginPage(Kind kind, String label, String path) {
     }
 
     /** The listed prefix the path starts with, ignoring case, or null. */
-    private static String knownPrefix(String path) {
+    private static @Nullable String knownPrefix(String path) {
         String lower = path.toLowerCase(Locale.ROOT);
         for (String prefix : PATHS.keySet()) {
-            if (lower.startsWith(prefix) || prefix.endsWith("/") && lower.equals(prefix.substring(0, prefix.length() - 1))) {
+            if (lower.startsWith(prefix)
+                    || (prefix.endsWith("/") && lower.equals(prefix.substring(0, prefix.length() - 1)))) {
                 return prefix;
             }
         }
@@ -94,7 +98,7 @@ public record LoginPage(Kind kind, String label, String path) {
     }
 
     /** A login page as the JSON export writes it, by label and path; empty when it is not one the plugin itself writes. */
-    public static Optional<LoginPage> exported(String label, String path) {
+    public static Optional<LoginPage> exported(@Nullable String label, @Nullable String path) {
         if (PASSWORD_FORM.equals(label)) {
             return restore(Kind.PASSWORD_FORM.name(), label, path);
         }
@@ -105,14 +109,17 @@ public record LoginPage(Kind kind, String label, String path) {
     }
 
     /** A saved login page, or empty when anything in it is not what the plugin itself writes. */
-    public static Optional<LoginPage> restore(String kind, String label, String path) {
+    public static Optional<LoginPage> restore(@Nullable String kind, @Nullable String label, @Nullable String path) {
+        if (kind == null || label == null || path == null) {
+            return Optional.empty();
+        }
         Kind k;
         try {
             k = Kind.valueOf(kind);
-        } catch (IllegalArgumentException | NullPointerException e) {
+        } catch (IllegalArgumentException e) {
             return Optional.empty();
         }
-        if (!LABELS.contains(label) || path == null) {
+        if (!LABELS.contains(label)) {
             return Optional.empty();
         }
         String kept = k == Kind.KNOWN_PATH ? knownPrefix(path) : firstSegment(path);

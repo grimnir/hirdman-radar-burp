@@ -1,5 +1,7 @@
 # Contributing
 
+import org.jspecify.annotations.Nullable;
+
 Bug reports, ideas and pull requests are welcome. For a vulnerability, see
 [SECURITY.md](SECURITY.md) instead.
 
@@ -14,6 +16,9 @@ and downloads it if it is not installed.
 ./gradlew test jacocoTestReport    # coverage in build/reports/jacoco
 ./gradlew pitest                   # mutation testing in build/reports/pitest
 ```
+
+The compile runs Error Prone and NullAway: in the plugin's code a value may be
+null only where JSpecify's `@Nullable` says so.
 
 Tests run headless against fakes of the Montoya API (`Fakes` in the tests) and
 never reach the network. The build is reproducible: the same commit gives a jar

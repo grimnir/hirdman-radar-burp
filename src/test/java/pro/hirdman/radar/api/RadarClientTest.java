@@ -2,6 +2,7 @@ package pro.hirdman.radar.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -20,7 +21,7 @@ class RadarClientTest {
     @Test
     void clientForTheServerUrlOrNone() {
         Transport t = (m, u, h, b, timeout) -> new Reply(200, Map.of(), "{}");
-        assertTrue(RadarClient.of("https://scan.hirdman.pro/", t) instanceof RadarClient);
+        assertNotNull(RadarClient.of("https://scan.hirdman.pro/", t));
         assertEquals(null, RadarClient.of("http://scan.hirdman.pro", t));
         assertEquals(null, RadarClient.of(null, t));
     }

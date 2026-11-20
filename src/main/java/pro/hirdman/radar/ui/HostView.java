@@ -7,6 +7,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.ServerEvent.Finding;
 import pro.hirdman.radar.export.ResultsExport;
 import pro.hirdman.radar.model.HostResult;
@@ -91,7 +92,7 @@ public final class HostView {
         return risk == Risk.NONE ? "leaks counted." : risk.label() + " risk.";
     }
 
-    private static String finding(Finding f) {
+    private static @Nullable String finding(Finding f) {
         Risk risk = Risk.ofSeverity(f.severity());
         return risk == Risk.NONE ? f.name() : risk.label() + ": " + f.name();
     }

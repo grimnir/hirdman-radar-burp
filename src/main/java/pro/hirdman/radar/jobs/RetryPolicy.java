@@ -2,6 +2,7 @@ package pro.hirdman.radar.jobs;
 
 import java.time.Duration;
 import java.util.function.DoubleSupplier;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.ApiException;
 
 /** What to do after a failed call: wait and try again, or give up with a reason for the user. */
@@ -16,10 +17,10 @@ public final class RetryPolicy {
     public record Retry(Duration after, boolean countsAsAttempt, Wait kind, String reason) implements Decision {
     }
 
-    public record Fail(String reason) implements Decision {
+    public record Fail(@Nullable String reason) implements Decision {
     }
 
-    static final Duration MAX_BACKOFF_RETRY_AFTER = Duration.ofSeconds(120);
+    static final Duration MAX_BACKOFF_RETRY_AFTER = Duration.ofMinutes(2);
     static final Duration RATE_LIMIT_BUDGET = Duration.ofMinutes(70);
     /** The server cancels a job nobody polls for 60 s, so a poll never waits longer than this. */
     static final Duration MAX_POLL_WAIT = Duration.ofSeconds(45);
@@ -58,7 +59,7 @@ public final class RetryPolicy {
         if (status == 401) {
             return new Fail(StatusText.notTakingChecks());
         }
-        if (status == 500 || status == 502 || status == 503 || status == 504 || status >= 520 && status <= 524) {
+        if (status == 500 || status == 502 || status == 503 || status == 504 || (status >= 520 && status <= 524)) {
             String reason = "Server unavailable (HTTP " + status + ")";
             return backoff(e, attemptsUsed, maxAttempts, random, reason, reason, poll);
         }

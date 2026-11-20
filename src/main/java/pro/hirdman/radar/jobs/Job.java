@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.model.HostNames;
 
 /** One plugin job as the Jobs strip shows it. State changes are reported to the queue. */
@@ -17,7 +18,7 @@ public final class Job {
 
     private final long id = IDS.incrementAndGet();
     private final JobKind kind;
-    private final String domain;
+    private final @Nullable String domain;
     private final List<String> hosts;
     private final boolean rescan;
     private final boolean recheck;
@@ -31,7 +32,7 @@ public final class Job {
     private volatile boolean held;
     private boolean wakeRequested;
 
-    Job(JobKind kind, String domain, List<String> hosts, boolean rescan, boolean recheck, Consumer<Job> onChange) {
+    Job(JobKind kind, @Nullable String domain, List<String> hosts, boolean rescan, boolean recheck, Consumer<Job> onChange) {
         this(kind, domain, hosts, rescan, recheck, false, onChange);
     }
 
@@ -39,7 +40,7 @@ public final class Job {
      * Hosts are normalized and de-duplicated; invalid names are dropped. {@code recheck} jobs never spawn another;
      * {@code force} jobs send hosts checked in the last 24 h too.
      */
-    Job(JobKind kind, String domain, List<String> hosts, boolean rescan, boolean recheck, boolean force,
+    Job(JobKind kind, @Nullable String domain, List<String> hosts, boolean rescan, boolean recheck, boolean force,
             Consumer<Job> onChange) {
         this.kind = kind;
         this.domain = domain == null ? null : HostNames.normalize(domain).orElse(domain);
@@ -59,7 +60,7 @@ public final class Job {
     }
 
     /** The domain for domain jobs, null for host checks. */
-    public String domain() {
+    public @Nullable String domain() {
         return domain;
     }
 
@@ -85,7 +86,8 @@ public final class Job {
                 && Set.copyOf(hosts).equals(Set.copyOf(other.hosts));
     }
 
-    public String label() {
+    /** Null only for a domain job without a domain, which the queue never makes. */
+    public @Nullable String label() {
         if (recheck) {
             return "Re-check failed";
         }
@@ -110,7 +112,7 @@ public final class Job {
     /** Runner updates; ignored once the job is cancelled, so a late answer cannot revive it, and when nothing changes. */
     void update(JobState newState, String newStatus) {
         synchronized (this) {
-            if (state == JobState.CANCELLED || state == newState && Objects.equals(status, newStatus)) {
+            if (state == JobState.CANCELLED || (state == newState && Objects.equals(status, newStatus))) {
                 return;
             }
             state = newState;

@@ -8,6 +8,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Server HTML for issue fields, cut down to bare formatting tags and plain https links to the radar server and the
@@ -30,12 +31,12 @@ final class IssueHtml {
     private IssueHtml() {
     }
 
-    static String clean(String html) {
+    static String clean(@Nullable String html) {
         return clean(html, null);
     }
 
     /** {@code serverHost}: the radar server, which links may also point to; null for none. */
-    static String clean(String html, String serverHost) {
+    static String clean(@Nullable String html, @Nullable String serverHost) {
         if (html == null) {
             return "";
         }
@@ -84,7 +85,8 @@ final class IssueHtml {
             case '"' -> out.append("&quot;");
             case '\'' -> out.append("&#39;");
             default -> {
-                if (!Character.isValidCodePoint(c) || Character.isISOControl(c) && c != '\n' && c != '\r' && c != '\t') {
+                if (!Character.isValidCodePoint(c)
+                        || (Character.isISOControl(c) && c != '\n' && c != '\r' && c != '\t')) {
                     return;
                 }
                 int type = Character.getType(c);
@@ -101,7 +103,8 @@ final class IssueHtml {
     }
 
     /** Writes the allowed tag at i and returns the index after it; returns i when there is none. */
-    private static int tag(String s, int i, Matcher link, String serverHost, Deque<String> open, StringBuilder out) {
+    private static int tag(String s, int i, Matcher link, @Nullable String serverHost, Deque<String> open,
+            StringBuilder out) {
         if (s.startsWith("<br>", i)) {
             out.append("<br>");
             return i + 4;
@@ -130,7 +133,7 @@ final class IssueHtml {
         return i;
     }
 
-    private static boolean allowed(String host, String serverHost) {
+    private static boolean allowed(String host, @Nullable String serverHost) {
         String h = host.toLowerCase(Locale.ROOT);
         return h.equalsIgnoreCase(serverHost) || LINK_HOSTS.contains(h.startsWith("www.") ? h.substring(4) : h);
     }

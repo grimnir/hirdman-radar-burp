@@ -22,6 +22,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.api.Reply;
 import pro.hirdman.radar.api.Transport;
 
@@ -67,7 +68,8 @@ public final class BurpTransport implements Transport {
     }
 
     @Override
-    public Reply send(String method, URI url, Map<String, String> headers, String body, Duration timeout) throws IOException {
+    public Reply send(String method, URI url, Map<String, String> headers, @Nullable String body, Duration timeout)
+            throws IOException {
         if (off.getAsBoolean()) {
             throw new IOException("Private project: nothing is sent to the radar server");
         }
@@ -110,7 +112,7 @@ public final class BurpTransport implements Transport {
      * sends. A request carrying such credentials is reported and its answer dropped, so the job stops instead of
      * sending them again. Other added headers, such as a bug bounty marker, are noted once and the request goes on.
      */
-    private void checkSentHeaders(HttpRequest sent, Map<String, String> own) throws Altered {
+    private void checkSentHeaders(@Nullable HttpRequest sent, Map<String, String> own) throws Altered {
         if (sent == null) {
             return;
         }

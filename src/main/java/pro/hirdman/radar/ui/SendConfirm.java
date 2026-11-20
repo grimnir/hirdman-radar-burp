@@ -7,6 +7,7 @@ import java.util.function.Supplier;
 import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JOptionPane;
+import org.jspecify.annotations.Nullable;
 
 /** Asks before more host names leave Burp than one keyless server check takes. */
 @FunctionalInterface
@@ -51,7 +52,7 @@ public interface SendConfirm {
         return pane;
     }
 
-    private static JButton button(Container c, String text) {
+    private static @Nullable JButton button(Container c, String text) {
         for (Component child : c.getComponents()) {
             if (child instanceof JButton b && text.equals(b.getText())) {
                 return b;

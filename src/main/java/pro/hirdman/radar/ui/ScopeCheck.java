@@ -9,6 +9,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.model.HostNames;
 
 /**
@@ -23,8 +24,8 @@ record ScopeCheck(List<String> hosts, int recent, int internal) {
      * Drops IPs, bad names and the radar server; internal names count as {@code internal}, hosts checked within
      * {@link #RECENT} as {@code recent}.
      */
-    static ScopeCheck plan(Collection<String> raw, String serverHost, Function<String, Optional<Instant>> lastChecked,
-            Instant now) {
+    static ScopeCheck plan(Collection<String> raw, @Nullable String serverHost,
+            Function<String, Optional<Instant>> lastChecked, Instant now) {
         Instant since = now.minus(RECENT);
         String server = serverHost == null ? null : HostNames.normalize(serverHost).orElse(null);
         List<String> hosts = new ArrayList<>();
@@ -50,7 +51,7 @@ record ScopeCheck(List<String> hosts, int recent, int internal) {
     }
 
     /** {@code hostsLeft} is the server's hourly allowance for this address, or null when there is none. */
-    String question(Integer hostsLeft) {
+    String question(@Nullable Integer hostsLeft) {
         StringBuilder q = new StringBuilder("Check ").append(count(hosts.size(), "in-scope host"))
                 .append(" from the site map for leaks?");
         if (recent > 0) {

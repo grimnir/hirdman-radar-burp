@@ -1,6 +1,7 @@
 package pro.hirdman.radar.ui;
 
 import java.awt.Color;
+import org.jspecify.annotations.Nullable;
 import pro.hirdman.radar.model.Risk;
 
 /** Risk text colours for both Burp themes, striped rows included, and the WCAG contrast check behind them. */
@@ -17,7 +18,7 @@ public final class RiskColors {
     }
 
     /** Null for Low and none: those use the theme's text colour. */
-    public static Color text(Risk r, boolean dark) {
+    public static @Nullable Color text(Risk r, boolean dark) {
         return switch (r) {
             case HIGH -> dark ? HIGH_DARK : HIGH_LIGHT;
             case MEDIUM -> dark ? MEDIUM_DARK : MEDIUM_LIGHT;
@@ -26,7 +27,7 @@ public final class RiskColors {
     }
 
     /** A background darker than half brightness means the dark theme. */
-    public static boolean dark(Color background) {
+    public static boolean dark(@Nullable Color background) {
         if (background == null) {
             return false;
         }
@@ -41,7 +42,7 @@ public final class RiskColors {
     }
 
     /** {@code preferred} when it reads well on {@code background}, else {@code fallback}. */
-    public static Color readable(Color preferred, Color fallback, Color background) {
+    public static Color readable(@Nullable Color preferred, Color fallback, @Nullable Color background) {
         if (preferred == null || background == null || contrast(preferred, background) < MIN_CONTRAST) {
             return fallback;
         }

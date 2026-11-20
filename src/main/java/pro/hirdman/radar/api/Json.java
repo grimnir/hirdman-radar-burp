@@ -5,6 +5,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /** Shared JSON settings and helpers for server data. */
 public final class Json {
@@ -20,7 +21,7 @@ public final class Json {
     }
 
     /** Server text made safe for one-line display: control, format and space runs become one space, 300 chars max. */
-    public static String oneLine(String s) {
+    public static @Nullable String oneLine(@Nullable String s) {
         if (s == null) {
             return null;
         }
@@ -50,12 +51,12 @@ public final class Json {
     }
 
     /** The JVM's one copy of a text many rows repeat (finding texts, source names); null stays null. */
-    static String shared(String s) {
+    static @Nullable String shared(@Nullable String s) {
         return s == null ? null : s.intern();
     }
 
     /** Immutable copy without nulls; a missing list becomes empty. */
-    static <T> List<T> list(List<T> items) {
+    static <T> List<T> list(@Nullable List<T> items) {
         return items == null ? List.of() : items.stream().filter(Objects::nonNull).toList();
     }
 }
