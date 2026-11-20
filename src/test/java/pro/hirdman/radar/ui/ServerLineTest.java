@@ -20,7 +20,7 @@ class ServerLineTest {
     @Test
     void passedShowsTheLimits() {
         ServerLine l = ServerLine.passed(meta("0.1.0", 300, "x"), "0.1.0");
-        assertEquals("Without a key: up to 50 hosts per check and 300 hosts per hour from your address.", l.text());
+        assertEquals("Free limits: up to 50 hosts per check and 300 per hour from your address.", l.text());
         assertFalse(l.tryAgain());
         assertEquals("", ServerLine.passed(meta(null, 0, "x"), "0.1.0").text());
     }

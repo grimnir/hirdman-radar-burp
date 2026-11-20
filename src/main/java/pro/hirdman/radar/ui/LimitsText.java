@@ -13,7 +13,7 @@ public final class LimitsText {
         if (l == null || l.hostsPerHour() <= 0) {
             return Optional.empty();
         }
-        return Optional.of("Without a key: up to " + l.maxHosts() + " hosts per check and " + l.hostsPerHour()
-                + " hosts per hour from your address.");
+        return Optional.of("Free limits: up to " + l.maxHosts() + " hosts per check and " + l.hostsPerHour()
+                + " per hour from your address.");
     }
 }

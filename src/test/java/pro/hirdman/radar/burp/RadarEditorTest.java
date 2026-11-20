@@ -140,9 +140,9 @@ class RadarEditorTest {
         check("vpn.example.com", null);
         editor.setRequestResponse(rr("vpn.example.com"));
         editor.button.doClick(0);
-        TestJobs.update(queued, JobState.RETRYING, "Hourly limit without a key reached. Continues in 40 min.");
+        TestJobs.update(queued, JobState.RETRYING, "Hourly limit reached. Continues in 40 min.");
         editor.refresh();
-        assertEquals("Hourly limit without a key reached. Continues in 40 min.", editor.queuedLabel.getText());
+        assertEquals("Hourly limit reached. Continues in 40 min.", editor.queuedLabel.getText());
         assertEquals(editor.queuedLabel.getText(), editor.queuedLabel.getToolTipText());
         assertFalse(editor.button.isEnabled());
         TestJobs.update(queued, JobState.FAILED, "<html>Failed: x");

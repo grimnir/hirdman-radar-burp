@@ -88,7 +88,7 @@ class RetryPolicyTest {
     @Test
     void hourlyLimitWaitsRetryAfter() {
         ApiException e = http(429, "{\"error\":\"hourly limit without a key: 300 hosts per hour\"}", "Retry-After", "2400");
-        assertEquals(new Retry(Duration.ofSeconds(2400), false, Wait.HOURLY_LIMIT, "Hourly limit without a key reached"),
+        assertEquals(new Retry(Duration.ofSeconds(2400), false, Wait.HOURLY_LIMIT, "Hourly limit reached"),
                 decide(e, 4));
     }
 
@@ -123,7 +123,7 @@ class RetryPolicyTest {
 
     @Test
     void http401Fails() {
-        assertEquals(new Fail("The radar server does not accept requests without a key right now."),
+        assertEquals(new Fail("The radar server is not taking checks right now. Try again later."),
                 decide(http(401, "{\"error\":\"unauthorized\"}"), 0));
     }
 
@@ -148,7 +148,7 @@ class RetryPolicyTest {
         // The server cancels a job nobody polls for 60 s.
         assertEquals(Duration.ofSeconds(45), ((Retry) decidePoll(http(503, "", "Retry-After", "900"), 0, 5)).after());
         assertEquals(Duration.ofSeconds(45), ((Retry) decidePoll(http(429, "", "Retry-After", "3600"), 0, 5)).after());
-        assertEquals(new Retry(Duration.ofSeconds(45), false, Wait.HOURLY_LIMIT, "Hourly limit without a key reached"),
+        assertEquals(new Retry(Duration.ofSeconds(45), false, Wait.HOURLY_LIMIT, "Hourly limit reached"),
                 decidePoll(http(429, "{\"error\":\"hourly limit without a key: 300 hosts per hour\"}"), 0, 5));
         assertEquals(Duration.ofSeconds(9), ((Retry) decidePoll(http(429, "", "Retry-After", "9"), 0, 5)).after());
     }
