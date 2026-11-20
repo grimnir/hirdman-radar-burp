@@ -47,4 +47,20 @@ class IssueHtmlTest {
     void supplementaryFormatCharactersAndLoneSurrogatesAreDropped() {
         assertEquals("ab\uD83D\uDE00", IssueHtml.clean("a\uDB40\uDC01b\uD800\uD83D\uDE00\uDC00"));
     }
+
+    @Test
+    void linksGoOnlyToKnownReferenceSitesAndTheServer() {
+        for (String host : new String[] {"cwe.mitre.org", "capec.mitre.org", "attack.mitre.org", "owasp.org", "www.owasp.org",
+                "cheatsheetseries.owasp.org", "hirdman.pro", "www.hirdman.pro", "www.cisa.gov", "pages.nist.gov", "CWE.MITRE.ORG"}) {
+            String a = "<a href=\"https://" + host + "/x\">l</a>";
+            assertEquals(a, IssueHtml.clean(a), host);
+        }
+        for (String host : new String[] {"evil.example", "1.2.3.4", "cwe.mitre.org.evil.example", "evil-owasp.org", "mitre.org",
+                "x.hirdman.pro", "radar.example.com"}) {
+            assertEquals("&lt;a href=&quot;https://" + host + "/&quot;&gt;l&lt;/a&gt;",
+                    IssueHtml.clean("<a href=\"https://" + host + "/\">l</a>"), host);
+        }
+        assertEquals("<a href=\"https://Radar.example.com/x\">l</a>",
+                IssueHtml.clean("<a href=\"https://Radar.example.com/x\">l</a>", "radar.example.com"));
+    }
 }

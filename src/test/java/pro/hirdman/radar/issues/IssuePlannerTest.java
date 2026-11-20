@@ -110,6 +110,24 @@ class IssuePlannerTest {
     }
 
     @Test
+    void serverHtmlMayLinkToTheRadarServer() {
+        IssueOptions o = new IssueOptions(true, false, Risk.LOW, "https://radar.example.com:8443");
+        Finding linked = new Finding("stealer_logs", "high", "tentative", "A", "<a href=\"https://radar.example.com/x\">r</a>"
+                + "<a href=\"https://evil.example/\">e</a>", "", "");
+        HostResult r = new HostResult("vpn.example.com", "example.com", HostStatus.CHECKED, 3, 2, 0, 0, List.of(linked), null);
+        assertTrue(IssuePlanner.plan(r, true, o, Set.of()).get(0).detail().startsWith("<a href=\"https://radar.example.com/x\">r</a>"
+                + "&lt;a href=&quot;https://evil.example/&quot;&gt;e&lt;/a&gt;"));
+    }
+
+    @Test
+    void siteHostIsTheServerNameOrNull() {
+        assertEquals("radar.example.com", IssuePlanner.siteHost("https://radar.example.com:8443"));
+        assertEquals(null, IssuePlanner.siteHost("https://a]b"));
+        assertEquals(null, IssuePlanner.siteHost("javascript:alert(1)//"));
+        assertEquals(null, IssuePlanner.siteHost(null));
+    }
+
+    @Test
     void planDoesNotCopyTheReportedSet() {
         // The session's set grows with every issue; copying it per row made a scope-change pass take seconds.
         Set<String> noCopy = new java.util.AbstractSet<>() {
@@ -208,15 +226,15 @@ class IssuePlannerTest {
                 IssueHtml.clean("<a href=\"https://cwe.mitre.org/data/definitions/522.html\">CWE-522</a>"));
         assertEquals("&lt;a href=&quot;http://x.example/&quot;&gt;l&lt;/a&gt;", IssueHtml.clean("<a href=\"http://x.example/\">l</a>"));
         assertEquals("&lt;a href=&quot;javascript:alert(1)&quot;&gt;l&lt;/a&gt;", IssueHtml.clean("<a href=\"javascript:alert(1)\">l</a>"));
-        assertEquals("&lt;a href=&quot;https://x.example/&quot; onclick=&quot;y&quot;&gt;l&lt;/a&gt;",
-                IssueHtml.clean("<a href=\"https://x.example/\" onclick=\"y\">l</a>"));
-        assertEquals("&lt;a href=&quot;https://x.example/a b&quot;&gt;l&lt;/a&gt;", IssueHtml.clean("<a href=\"https://x.example/a b\">l</a>"));
-        assertEquals("&lt;a href=&quot;https://x.example/&amp;&quot;&gt;l&lt;/a&gt;", IssueHtml.clean("<a href=\"https://x.example/&\">l</a>"));
-        assertEquals("&lt;A HREF=&quot;https://x.example/&quot;&gt;l&lt;/A&gt;", IssueHtml.clean("<A HREF=\"https://x.example/\">l</A>"));
+        assertEquals("&lt;a href=&quot;https://owasp.org/&quot; onclick=&quot;y&quot;&gt;l&lt;/a&gt;",
+                IssueHtml.clean("<a href=\"https://owasp.org/\" onclick=\"y\">l</a>"));
+        assertEquals("&lt;a href=&quot;https://owasp.org/a b&quot;&gt;l&lt;/a&gt;", IssueHtml.clean("<a href=\"https://owasp.org/a b\">l</a>"));
+        assertEquals("&lt;a href=&quot;https://owasp.org/&amp;&quot;&gt;l&lt;/a&gt;", IssueHtml.clean("<a href=\"https://owasp.org/&\">l</a>"));
+        assertEquals("&lt;A HREF=&quot;https://owasp.org/&quot;&gt;l&lt;/A&gt;", IssueHtml.clean("<A HREF=\"https://owasp.org/\">l</A>"));
         // A link never stays open and never nests.
-        assertEquals("<a href=\"https://x.example/\">l</a>", IssueHtml.clean("<a href=\"https://x.example/\">l"));
-        assertEquals("<a href=\"https://a.example/\">&lt;a href=&quot;https://b.example/&quot;&gt;l</a>&lt;/a&gt;",
-                IssueHtml.clean("<a href=\"https://a.example/\"><a href=\"https://b.example/\">l</a></a>"));
+        assertEquals("<a href=\"https://owasp.org/\">l</a>", IssueHtml.clean("<a href=\"https://owasp.org/\">l"));
+        assertEquals("<a href=\"https://owasp.org/\">&lt;a href=&quot;https://cwe.mitre.org/&quot;&gt;l</a>&lt;/a&gt;",
+                IssueHtml.clean("<a href=\"https://owasp.org/\"><a href=\"https://cwe.mitre.org/\">l</a></a>"));
         assertEquals("&lt;a href=&quot;https://" + "x".repeat(400) + "/&quot;&gt;",
                 IssueHtml.clean("<a href=\"https://" + "x".repeat(400) + "/\">"));
     }
@@ -269,10 +287,10 @@ class IssuePlannerTest {
         assertEquals("<ul><li><b>a</b></li></ul>", IssueHtml.clean("<ul><li><b>a"));
         assertEquals("<b><i>x</i></b>&lt;/i&gt;", IssueHtml.clean("<b><i>x</b></i>"));
         assertEquals("a&lt;/ul&gt;&lt;/p&gt;b", IssueHtml.clean("a</ul></p>b"));
-        assertEquals("<a href=\"https://x.example/\">l <b>b</b></a>", IssueHtml.clean("<a href=\"https://x.example/\">l <b>b"));
-        assertEquals("<b><a href=\"https://x.example/\">l</a></b>", IssueHtml.clean("<b><a href=\"https://x.example/\">l</b>"));
-        assertEquals("<a href=\"https://x.example/\">&lt;a href=&quot;https://y.example/&quot;&gt;l</a>",
-                IssueHtml.clean("<a href=\"https://x.example/\"><a href=\"https://y.example/\">l"));
+        assertEquals("<a href=\"https://owasp.org/\">l <b>b</b></a>", IssueHtml.clean("<a href=\"https://owasp.org/\">l <b>b"));
+        assertEquals("<b><a href=\"https://owasp.org/\">l</a></b>", IssueHtml.clean("<b><a href=\"https://owasp.org/\">l</b>"));
+        assertEquals("<a href=\"https://owasp.org/\">&lt;a href=&quot;https://cwe.mitre.org/&quot;&gt;l</a>",
+                IssueHtml.clean("<a href=\"https://owasp.org/\"><a href=\"https://cwe.mitre.org/\">l"));
         assertEquals("<ul><li>" + "x".repeat(IssueHtml.MAX_LENGTH - 8) + "</li></ul>",
                 IssueHtml.clean("<ul><li>" + "x".repeat(IssueHtml.MAX_LENGTH) + "</li></ul>"));
     }

@@ -2,6 +2,7 @@ package pro.hirdman.radar.issues;
 
 import static pro.hirdman.radar.jobs.StatusText.count;
 
+import java.net.URI;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -48,6 +49,7 @@ public final class IssuePlanner {
             return List.of();
         }
         String baseUrl = baseUrl(r.host());
+        String server = siteHost(o.site());
         String link = null;
         Set<String> seen = new HashSet<>();
         List<IssueSpec> out = new ArrayList<>();
@@ -65,8 +67,8 @@ public final class IssuePlanner {
             if (link == null) {
                 link = sourcesLine(r) + checkedLine(r, o.site());
             }
-            out.add(new IssueSpec(PREFIX + name, IssueHtml.clean(f.detail()) + link, IssueHtml.clean(f.remediation()),
-                    baseUrl, severity(f.severity()), confidence(f.confidence()), IssueHtml.clean(f.background())));
+            out.add(new IssueSpec(PREFIX + name, IssueHtml.clean(f.detail(), server) + link, IssueHtml.clean(f.remediation(), server),
+                    baseUrl, severity(f.severity()), confidence(f.confidence()), IssueHtml.clean(f.background(), server)));
         }
         LoginPage login = r.login();
         if (login != null && Risk.LOW.compareTo(o.lowest()) >= 0 && !alreadyReported.contains(IssueSpec.key(PREFIX + LOGIN, baseUrl))) {
@@ -92,6 +94,18 @@ public final class IssuePlanner {
             return Optional.empty();
         }
         return Optional.of(site + "/?domain=" + d.get());
+    }
+
+    /** The host of a site that passes {@link #siteUrl}, or null. */
+    static String siteHost(String site) {
+        if (site == null || !SITE.matcher(site).matches()) {
+            return null;
+        }
+        try {
+            return URI.create(site).getHost();
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /** The breaches the host's records come from, as plain text; empty without sources. */

@@ -3,13 +3,15 @@ package pro.hirdman.radar.issues;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Server HTML for issue fields, cut down to bare formatting tags and plain https links (references);
- * everything else is shown as text.
+ * Server HTML for issue fields, cut down to bare formatting tags and plain https links to the radar server and the
+ * reference sites; everything else is shown as text.
  */
 final class IssueHtml {
 
@@ -18,7 +20,10 @@ final class IssueHtml {
     static final int MAX_DEPTH = 6;
     private static final List<String> TAGS = List.of("p", "b", "i", "ul", "ol", "li");
     // Only the exact form the server writes: https, no attributes but href, no quotes, spaces or & in the address.
-    private static final Pattern LINK = Pattern.compile("<a href=\"https://[A-Za-z0-9.-]{1,253}(?:/[A-Za-z0-9._~!$()*+,;=:@%/?#-]{0,300})?\">");
+    private static final Pattern LINK = Pattern.compile("<a href=\"https://([A-Za-z0-9.-]{1,253})(?:/[A-Za-z0-9._~!$()*+,;=:@%/?#-]{0,300})?\">");
+    /** Hosts the server's references point to, each also with "www."; links elsewhere stay out of Burp's reports. */
+    private static final Set<String> LINK_HOSTS = Set.of("hirdman.pro", "cwe.mitre.org", "capec.mitre.org", "attack.mitre.org",
+            "owasp.org", "cheatsheetseries.owasp.org", "cisa.gov", "pages.nist.gov");
     // Named entities that only stand for text; numeric ones are decoded and go through the raw character rules.
     private static final Pattern ENTITY = Pattern.compile("&(?:(amp|lt|gt|quot|nbsp)|#([0-9]{1,7})|#[xX]([0-9a-fA-F]{1,6}));");
 
@@ -26,6 +31,11 @@ final class IssueHtml {
     }
 
     static String clean(String html) {
+        return clean(html, null);
+    }
+
+    /** {@code serverHost}: the radar server, which links may also point to; null for none. */
+    static String clean(String html, String serverHost) {
         if (html == null) {
             return "";
         }
@@ -39,7 +49,7 @@ final class IssueHtml {
         while (i < s.length()) {
             int c = s.codePointAt(i);
             if (c == '<') {
-                int end = tag(s, i, link, open, out);
+                int end = tag(s, i, link, serverHost, open, out);
                 if (end > i) {
                     i = end;
                     continue;
@@ -91,7 +101,7 @@ final class IssueHtml {
     }
 
     /** Writes the allowed tag at i and returns the index after it; returns i when there is none. */
-    private static int tag(String s, int i, Matcher link, Deque<String> open, StringBuilder out) {
+    private static int tag(String s, int i, Matcher link, String serverHost, Deque<String> open, StringBuilder out) {
         if (s.startsWith("<br>", i)) {
             out.append("<br>");
             return i + 4;
@@ -105,7 +115,7 @@ final class IssueHtml {
                     return i + opener.length();
                 }
             }
-            if (!open.contains("a") && link.region(i, s.length()).lookingAt()) {
+            if (!open.contains("a") && link.region(i, s.length()).lookingAt() && allowed(link.group(1), serverHost)) {
                 out.append(link.group());
                 open.push("a");
                 return link.end();
@@ -118,6 +128,11 @@ final class IssueHtml {
             return i + closed.get().length() + 3;
         }
         return i;
+    }
+
+    private static boolean allowed(String host, String serverHost) {
+        String h = host.toLowerCase(Locale.ROOT);
+        return h.equalsIgnoreCase(serverHost) || LINK_HOSTS.contains(h.startsWith("www.") ? h.substring(4) : h);
     }
 
     private static void closeTo(String tag, Deque<String> open, StringBuilder out) {
