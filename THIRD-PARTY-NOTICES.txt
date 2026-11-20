@@ -1,9 +1,5 @@
-Hirdman Radar bundles these libraries inside its jar.
+Hirdman Radar bundles this library inside its jar.
 
 Gson 2.15.0
 https://github.com/google/gson
-Apache License 2.0, see licenses/Apache-2.0.txt
-
-Error Prone annotations 2.50.0, a dependency of Gson
-https://github.com/google/error-prone
 Apache License 2.0, see licenses/Apache-2.0.txt

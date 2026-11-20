@@ -45,12 +45,26 @@ tasks.test {
     inputs.files(fileTree(".") { include("README*.md") }).withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
+// Gson's Error Prone annotations are for compilers only (Gson marks them optional), so neither the jar
+// nor the tests carry them and the tests run Gson as Burp does.
+listOf(configurations.runtimeClasspath, configurations.testRuntimeClasspath).forEach {
+    it { exclude(group = "com.google.errorprone", module = "error_prone_annotations") }
+}
+
 tasks.jar {
     archiveBaseName = "hirdman-radar"
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    // A second copy of a file is a build error, not a silent pick.
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+    manifest {
+        attributes(
+            "Implementation-Title" to "Hirdman Radar",
+            "Implementation-Version" to project.version,
+            "Implementation-Vendor" to "HIRDMAN",
+        )
+    }
     // Gson goes inside the jar: Burp loads a single file.
     from(configurations.runtimeClasspath.map { cp -> cp.map { zipTree(it) } }) {
-        exclude("META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "**/module-info.class")
+        exclude("META-INF/MANIFEST.MF", "META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "**/module-info.class")
     }
     // The bundled libraries' licenses travel with them; update the notice when their versions change.
     from("THIRD-PARTY-NOTICES.txt") { into("META-INF") }
