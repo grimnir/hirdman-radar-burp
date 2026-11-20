@@ -217,6 +217,8 @@ public final class JobRunner {
         boolean savedScan;
         /** Set when the server stopped checking at the hourly host limit. */
         boolean hourlyCut;
+        /** Hosts the server skipped after the hourly limit warning. */
+        final Set<String> cutHosts = new HashSet<>();
         /** Set when the domain scan left less important subdomains unchecked. */
         ServerEvent.@Nullable SubdomainLimit limit;
         /** Hosts this run sends itself; null while the server scans the whole domain. */
@@ -560,6 +562,12 @@ public final class JobRunner {
         if (!c.rows.containsKey(host.get()) && c.rows.size() >= Math.max(MAX_ROWS, c.sent.size())) {
             throw unexpected(c, "the server sent checks of more than " + MAX_ROWS + " hosts");
         }
+        if (c.hourlyCut && !check.checked()) {
+            // Skipped at the hourly limit, not failed: listed as Not checked yet, an earlier check stays.
+            c.cutHosts.add(host.get());
+            store.skipped(c.job.domain(), host.get()).ifPresent(row -> c.rows.put(row.host(), row));
+            return;
+        }
         store.apply(c.job.domain(), check, Instant.now()).ifPresent(row -> c.rows.put(row.host(), row));
     }
 
@@ -711,7 +719,10 @@ public final class JobRunner {
         String done;
         if (c.hourlyCut) {
             // The server stopped at the hourly limit: the unchecked hosts did not fail.
-            done = StatusText.doneAtHourlyLimit(hosts, leaks, unchecked, savedScan);
+            int cut = (int) c.cutHosts.stream().filter(c.rows::containsKey).count();
+            int failed = (int) c.rows.values().stream()
+                    .filter(r -> r.status() == HostStatus.NOT_CHECKED && !c.cutHosts.contains(r.host())).count();
+            done = StatusText.doneAtHourlyLimit(hosts, leaks, cut, failed, savedScan);
             tail = StatusText.HOURLY_CUT + tail;
         } else {
             done = StatusText.done(hosts, leaks, unchecked, savedScan);
@@ -726,7 +737,8 @@ public final class JobRunner {
     }
 
     private List<String> recheckList(Run c) {
-        if (c.job.recheck() || !c.o.recheckNotChecked() || c.job.state() != JobState.DONE) {
+        // After the hourly limit a re-check would only be refused, and would spend the next hour's limit unasked.
+        if (c.job.recheck() || !c.o.recheckNotChecked() || c.job.state() != JobState.DONE || c.hourlyCut) {
             return List.of();
         }
         return c.rows.values().stream().filter(r -> r.status() == HostStatus.NOT_CHECKED).map(HostResult::host).toList();

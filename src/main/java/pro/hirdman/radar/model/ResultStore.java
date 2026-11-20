@@ -99,6 +99,31 @@ public final class ResultStore {
         }
     }
 
+    /** A host the server skipped at the hourly limit: a new one is added as Found, an existing row is left as it is. */
+    public Optional<HostResult> skipped(@Nullable String domain, String host) {
+        Optional<String> h = HostNames.normalize(host);
+        if (h.isEmpty()) {
+            return Optional.empty();
+        }
+        HostResult row;
+        boolean added;
+        synchronized (this) {
+            HostResult old = rows.get(h.get());
+            added = old == null;
+            row = old != null ? old
+                    : HostResult.withoutCounts(h.get(), HostNames.normalize(domain).orElse(ParentDomains.base(h.get())),
+                            HostStatus.FOUND, null);
+            if (added) {
+                store(row);
+            }
+        }
+        if (added) {
+            fire(Set.of(row.domain()));
+            foundListeners.forEach(l -> l.accept(List.of(row.host())));
+        }
+        return Optional.of(row);
+    }
+
     /** Records a check. A host already in the store keeps its domain and login page; an invalid host is ignored. */
     public Optional<HostResult> apply(@Nullable String domain, Check e, Instant now) {
         Optional<String> h = HostNames.normalize(e.domain());

@@ -857,10 +857,27 @@ class JobRunnerTest {
                 ev("service_warning", "{\"service\":\"hourly_limit\",\"message\":\"Hourly host limit without a key reached\"}"),
                 check("mail.example.com", false), done(3, 2)));
         Job j = domainJob();
-        run(j);
-        assertEquals("Done: 3 hosts, 0 with leaks, 2 not checked yet. Hourly limit reached: the rest are listed as Not checked yet.",
-                j.status());
+        // Hosts after the warning were cut, not failed: no automatic re-check, which would only spend the next hour's limit.
+        assertEquals(List.of(), run(j));
+        assertEquals("Done: 3 hosts, 0 with leaks, 1 not checked yet, 1 failed. Hourly limit reached: the rest are listed as"
+                + " Not checked yet.", j.status());
         assertEquals(HostStatus.NOT_CHECKED, store.host("vpn.example.com").orElseThrow().status());
+        assertEquals(HostStatus.FOUND, store.host("mail.example.com").orElseThrow().status());
+    }
+
+    @Test
+    void aHostCutByTheHourlyLimitKeepsItsEarlierCounts() {
+        store.apply("example.com", new Check(false, "mail.example.com", 1, 2, 3, 4, 5, true, List.of()),
+                Instant.EPOCH);
+        HostResult before = store.host("mail.example.com").orElseThrow();
+        radar.polls.add(page(4, true, rootCheck("example.com"),
+                ev("service_warning", "{\"service\":\"hourly_limit\",\"message\":\"Hourly host limit without a key reached\"}"),
+                check("mail.example.com", false), done(2, 1)));
+        Job j = domainJob();
+        assertEquals(List.of(), run(j));
+        assertEquals(before, store.host("mail.example.com").orElseThrow());
+        assertEquals("Done: 2 hosts, 0 with leaks, 1 not checked yet. Hourly limit reached: the rest are listed as Not"
+                + " checked yet.", j.status());
     }
 
     @Test
