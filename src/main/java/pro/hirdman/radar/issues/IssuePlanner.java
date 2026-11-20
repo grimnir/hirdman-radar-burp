@@ -72,7 +72,7 @@ public final class IssuePlanner {
                 link = sourcesLine(r) + checkedLine(r, o.site());
             }
             // Every finding is tentative: the records are not verified.
-            out.add(new IssueSpec(PREFIX + kind.name(), IssueHtml.clean(f.detail(), server) + link,
+            out.add(new IssueSpec(PREFIX + kind.name(), IssueHtml.clean(f.detail(), server) + link + reviewLine(r, f, o.site()),
                     IssueHtml.clean(f.remediation(), server), baseUrl, severity(kind.risk()), "tentative",
                     IssueHtml.clean(f.background(), server)));
         }
@@ -144,6 +144,14 @@ public final class IssuePlanner {
         siteUrl(r.domain(), site).ifPresent(url -> parts.add("Latest scan of " + HostNames.normalize(r.domain()).orElseThrow()
                 + " and its subdomains: <a href=\"" + url + "\">" + url + "</a>. Its counts can differ from this issue."));
         return parts.isEmpty() ? "" : "<p>" + String.join(" ", parts) + "</p>";
+    }
+
+    /** The server's one line on a full review, after the link to the scan; nothing without the link or the line. */
+    static String reviewLine(HostResult r, Finding f, String site) {
+        if (f.review() == null || f.review().isEmpty() || siteUrl(r.domain(), site).isEmpty()) {
+            return "";
+        }
+        return "<p>" + IssueHtml.text(f.review()) + "</p>";
     }
 
     private static String severity(Risk risk) {

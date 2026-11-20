@@ -35,14 +35,15 @@ public final class ResultsJson {
     static final int MAX_STRING = 20_000;
 
     private record SavedFinding(String kind, String severity, String confidence, String name, String detail,
-            JsonElement background, JsonElement remediation) {
+            JsonElement background, JsonElement remediation, JsonElement review) {
     }
 
     private record SavedLogin(String kind, String label, String path) {
     }
 
+    /** {@code replayed} is written only when true; rows saved before it load as false. */
     private record Row(String host, String domain, String status, int stealer, int work, int personal, long dbRecords,
-            List<SavedFinding> findings, String checkedAt, List<BreachSource> sources, SavedLogin login) {
+            List<SavedFinding> findings, String checkedAt, List<BreachSource> sources, SavedLogin login, Boolean replayed) {
     }
 
     private record Saved(int v, List<String> texts, List<Row> hosts) {
@@ -60,10 +61,12 @@ public final class ResultsJson {
         List<Row> hosts = new ArrayList<>();
         for (HostResult r : rows) {
             List<SavedFinding> findings = r.findings().stream().map(f -> new SavedFinding(f.kind(), f.severity(),
-                    f.confidence(), f.name(), f.detail(), number(texts, f.background()), number(texts, f.remediation()))).toList();
+                    f.confidence(), f.name(), f.detail(), number(texts, f.background()), number(texts, f.remediation()),
+                    number(texts, f.review()))).toList();
             hosts.add(new Row(r.host(), r.domain(), r.status().name(), r.stealer(), r.work(), r.personal(), r.dbRecords(),
                     findings, r.checkedAt() == null ? null : r.checkedAt().toString(), r.sources(),
-                    r.login() == null ? null : new SavedLogin(r.login().kind().name(), r.login().label(), r.login().path())));
+                    r.login() == null ? null : new SavedLogin(r.login().kind().name(), r.login().label(), r.login().path()),
+                    r.replayed() ? Boolean.TRUE : null));
         }
         return Json.GSON.toJson(new Saved(VERSION, List.copyOf(texts.keySet()), hosts));
     }
@@ -180,11 +183,11 @@ public final class ResultsJson {
         }
         List<Finding> findings = r.findings() == null ? List.of() : r.findings().stream().filter(Objects::nonNull)
                 .map(f -> new Finding(f.kind(), f.severity(), f.confidence(), f.name(), f.detail(),
-                        text(f.background(), texts), text(f.remediation(), texts)))
+                        text(f.background(), texts), text(f.remediation(), texts), text(f.review(), texts)))
                 .toList();
         return Optional.of(new HostResult(host.get(), domain.get(), status.get(), Math.max(0, r.stealer()),
                 Math.max(0, r.work()), Math.max(0, r.personal()), Math.max(0, r.dbRecords()), findings, instant(r.checkedAt()),
-                r.sources(), login));
+                r.sources(), login, Boolean.TRUE.equals(r.replayed())));
     }
 
     /** A version or a text number: plain digits only, so exponents, fractions and huge values give -1. */

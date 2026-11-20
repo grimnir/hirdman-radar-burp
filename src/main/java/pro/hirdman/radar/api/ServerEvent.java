@@ -1,5 +1,8 @@
 package pro.hirdman.radar.api;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -31,9 +34,13 @@ public sealed interface ServerEvent {
     record SubdomainLimit(int count, int discovered) implements ServerEvent {
     }
 
-    /** One checked host; {@code root} marks the scanned domain itself. */
+    /**
+     * One checked host; {@code root} marks the scanned domain itself. {@code scannedAt} and {@code replayed} come from
+     * newer servers only: when the host was checked, and whether the result is a saved one rather than a check just now.
+     */
     record Check(boolean root, String domain, int hcCorpFound, int hcOriginFound, long dbEmailCount, long dbUrlCount,
-            int stealerCount, Boolean hcChecked, List<Finding> findings, List<BreachSource> breachSources) implements ServerEvent {
+            int stealerCount, Boolean hcChecked, List<Finding> findings, List<BreachSource> breachSources, String scannedAt,
+            Boolean replayed) implements ServerEvent {
 
         public Check {
             findings = Json.list(findings);
@@ -41,8 +48,31 @@ public sealed interface ServerEvent {
         }
 
         public Check(boolean root, String domain, int hcCorpFound, int hcOriginFound, long dbEmailCount, long dbUrlCount,
+                int stealerCount, Boolean hcChecked, List<Finding> findings, List<BreachSource> breachSources) {
+            this(root, domain, hcCorpFound, hcOriginFound, dbEmailCount, dbUrlCount, stealerCount, hcChecked, findings,
+                    breachSources, null, null);
+        }
+
+        public Check(boolean root, String domain, int hcCorpFound, int hcOriginFound, long dbEmailCount, long dbUrlCount,
                 int stealerCount, Boolean hcChecked, List<Finding> findings) {
             this(root, domain, hcCorpFound, hcOriginFound, dbEmailCount, dbUrlCount, stealerCount, hcChecked, findings, List.of());
+        }
+
+        /** When the server checked the host; {@code now} when it does not say, says something odd, or a time ahead of now. */
+        public Instant checkedAt(Instant now) {
+            if (scannedAt == null) {
+                return now;
+            }
+            try {
+                Instant t = OffsetDateTime.parse(scannedAt).toInstant();
+                return t.isAfter(now) ? now : t;
+            } catch (DateTimeParseException e) {
+                return now;
+            }
+        }
+
+        public boolean wasReplayed() {
+            return Boolean.TRUE.equals(replayed);
         }
 
         /** False when the account check did not run: the counts are unknown, not zero. */
@@ -52,12 +82,13 @@ public sealed interface ServerEvent {
 
         Check withRoot(boolean isRoot) {
             return new Check(isRoot, domain, hcCorpFound, hcOriginFound, dbEmailCount, dbUrlCount, stealerCount,
-                    hcChecked, findings, breachSources);
+                    hcChecked, findings, breachSources, scannedAt, replayed);
         }
     }
 
+    /** {@code review}: one plain line from newer servers on what a full HIRDMAN review shows for this kind, or null. */
     record Finding(String kind, String severity, String confidence, String name, String detail, String background,
-            String remediation) {
+            String remediation, String review) {
 
         /** Issue texts are cut to this length anyway; longer ones are cut before they are kept. */
         static final int MAX_TEXT = 10_000;
@@ -72,6 +103,12 @@ public sealed interface ServerEvent {
             detail = cut(detail, MAX_TEXT);
             background = shared(cut(background, MAX_TEXT));
             remediation = shared(cut(remediation, MAX_TEXT));
+            review = shared(Json.oneLine(review));
+        }
+
+        public Finding(String kind, String severity, String confidence, String name, String detail, String background,
+                String remediation) {
+            this(kind, severity, confidence, name, detail, background, remediation, null);
         }
 
         private static String shared(String s) {

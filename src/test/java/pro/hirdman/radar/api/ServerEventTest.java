@@ -68,6 +68,33 @@ class ServerEventTest {
     }
 
     @Test
+    void checkTimeReplayAndReviewAreRead() throws Exception {
+        String data = CHECK.replace("\"hc_checked\": true,", "\"hc_checked\": true, \"scanned_at\": \"2026-11-20T14:05:31Z\", \"replayed\": true,")
+                .replace("\"remediation\": \"<p>…</p>\"", "\"remediation\": \"<p>…</p>\", \"review\": \"A full review\\nshows more.\"");
+        ServerEvent.Check c = (ServerEvent.Check) parse("subdomain_check", data);
+        java.time.Instant now = java.time.Instant.parse("2026-11-20T18:00:00Z");
+        assertEquals(java.time.Instant.parse("2026-11-20T14:05:31Z"), c.checkedAt(now));
+        assertTrue(c.wasReplayed());
+        assertEquals("A full review shows more.", c.findings().get(0).review());
+    }
+
+    @Test
+    void anOlderServerOrAnOddTimeMeansNow() throws Exception {
+        java.time.Instant now = java.time.Instant.parse("2026-11-20T18:00:00Z");
+        ServerEvent.Check old = (ServerEvent.Check) parse("subdomain_check", CHECK);
+        assertEquals(now, old.checkedAt(now));
+        assertFalse(old.wasReplayed());
+        assertEquals(null, old.findings().get(0).review());
+        for (String at : List.of("yesterday", "2026-11-21T00:00:00Z", "")) {
+            ServerEvent.Check c = (ServerEvent.Check) parse("subdomain_check", "{\"domain\":\"a.example.com\",\"scanned_at\":\"" + at + "\"}");
+            assertEquals(now, c.checkedAt(now), at);
+        }
+        ServerEvent.Check offset = (ServerEvent.Check) parse("subdomain_check",
+                "{\"domain\":\"a.example.com\",\"scanned_at\":\"2026-11-20T16:00:00+02:00\"}");
+        assertEquals(java.time.Instant.parse("2026-11-20T14:00:00Z"), offset.checkedAt(now));
+    }
+
+    @Test
     void missingHcCheckedMeansNotChecked() throws Exception {
         ServerEvent.Check c = (ServerEvent.Check) parse("subdomain_check", "{\"domain\":\"a.example.com\"}");
         assertFalse(c.checked());
