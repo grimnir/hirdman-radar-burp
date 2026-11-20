@@ -815,7 +815,7 @@ class JobRunnerTest {
 
     @Test
     void aDomainWithChecksOlderThanADayIsScanned() {
-        // A full scan refreshes them without spending the hourly host budget.
+        // A full scan refreshes them in one job; hosts the server checked in the last day cost nothing.
         checkedAgo("example.com", true, Duration.ofHours(1));
         checkedAgo("vpn.example.com", true, Duration.ofHours(25));
         radar.polls.add(page(1, true, rootCheck("example.com"), done(0, 0)));
@@ -840,7 +840,7 @@ class JobRunnerTest {
 
     @Test
     void aRepeatWithMoreThanOneServerCheckScansTheDomainInstead() {
-        // A scan spends nothing of the hourly host limit.
+        // One scan instead of many host checks; the server reuses its saved host results.
         checkedAgo("example.com", true, Duration.ofHours(1));
         radar.subdomains.add(subdomains(IntStream.range(0, 51).mapToObj(i -> "h" + i + ".example.com").toArray(String[]::new)));
         radar.polls.add(page(1, true, rootCheck("example.com"), done(0, 0)));

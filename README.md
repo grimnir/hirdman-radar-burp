@@ -78,13 +78,13 @@ The search runs on the HIRDMAN server, and Burp gets the finished list.
 
 | Where | What it does |
 |---|---|
-| *Hirdman Radar* tab | A field for the domain (a URL works too) and the *Find subdomains* and *Find and check* buttons. Jobs run in the background. Filters *With leaks*, *New since last check*, *Not checked yet*, *Check failed*, *In scope*. Export to JSON or CSV, import of a JSON export, and a Markdown summary for your report |
+| *Hirdman Radar* tab | A field for the domain (a URL works too) and the *Find subdomains* and *Find and check* buttons. Jobs run in the background. Filters *With leaks*, *Login page + leaks*, *New since last check*, *Not checked yet*, *Check failed*, *In scope*. Export to JSON or CSV, import of a JSON export, and a Markdown summary for your report |
 | Context menu | In Target, Proxy, Repeater and Logger: find the subdomains of the selected host's parent domains, or check the selected hosts |
 | Issues | Hosts with leaks get issues at `https://<host>/`, one per kind of finding, with *Tentative* confidence, because no analyst has verified the numbers |
 | Message editor | Requests to a host from the plugin's table get a read-only *Hirdman Radar* tab with that host's counts |
 | *Check in-scope hosts* | Sends the in-scope hosts from the site map for a check, after you confirm |
 | Site map | Discovered subdomains that are in scope appear there as unrequested items (you can turn this off in the settings), and you can add any selected rows by hand |
-| Login pages | A form with a password field, HTTP authentication and known paths (FortiGate, Cisco, Ivanti and GlobalProtect VPN gateways, Citrix Gateway, plus Outlook on the web, AD FS and Keycloak) are marked from responses Burp has already received. The plugin itself never contacts the hosts |
+| Login pages | A form with a password field, HTTP authentication and known paths (FortiGate, Cisco, Ivanti and GlobalProtect VPN gateways, Citrix Gateway, plus Outlook on the web, AD FS and Keycloak) are marked from responses Burp has already received. The plugin itself never contacts the hosts. *Send login page to Organizer* sends the item Burp stored for such a page to Organizer with a note of the host's counts |
 | Burp project | Results (numbers only) are saved in the project and stay visible after a restart, offline too |
 
 ## What leaves Burp
@@ -146,9 +146,11 @@ info@hirdman.pro.
 ## Limits
 
 Free use allows up to 50 hosts per check and 300 hosts per hour from your
-address. A domain can
-be rescanned once an hour. A domain scan does not count against the hourly host
-limit. The tab shows the server's current limits, and before a large check it
+address. Every host a check or a domain scan sends for checking counts against
+the hourly limit; results the server already has from a recent scan or check
+are free. A domain can be rescanned once an hour. When the limit runs out in
+the middle of a domain scan, the remaining hosts are listed as *Not checked
+yet*. The tab shows the server's current limits, and before a large check it
 says how long the check will take. A check that hits the hourly limit continues
 on its own while Burp is open.
 

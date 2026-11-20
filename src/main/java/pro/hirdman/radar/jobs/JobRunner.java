@@ -322,7 +322,7 @@ public final class JobRunner {
         scanDomain(c, domain, rescan);
     }
 
-    /** A domain scan spends nothing of the hourly host limit. */
+    /** Without a key a scan spends the hourly host limit on hosts the server checks anew; saved results are free. */
     private void scanDomain(Run c, String domain, boolean rescan) throws Stop, InterruptedException {
         runResumable(c, JobRequest.ofDomain(domain, rescan), null);
         String tail = "";
@@ -350,7 +350,7 @@ public final class JobRunner {
 
     /**
      * A repeat: the domain itself (the row a scan writes) was checked in the last 24 h and no row of it longer ago.
-     * Older checks are refreshed by a scan, which spends nothing of the hourly host limit.
+     * Older checks are refreshed by a scan, which reuses the server's saved host results for free.
      */
     private boolean repeat(String domain) {
         Instant now = Instant.now();
