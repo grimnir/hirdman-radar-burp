@@ -1,6 +1,6 @@
 package pro.hirdman.radar.burp;
 
-import static pro.hirdman.radar.ui.PlainText.label;
+import static pro.hirdman.radar.ui.PlainText.button;
 import static pro.hirdman.radar.ui.PlainText.plain;
 import static pro.hirdman.radar.ui.PlainText.tip;
 
@@ -10,18 +10,22 @@ import burp.api.montoya.ui.Selection;
 import burp.api.montoya.ui.editor.extension.ExtensionProvidedHttpRequestEditor;
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.Cursor;
 import java.awt.FlowLayout;
+import java.awt.Insets;
 import java.awt.event.HierarchyEvent;
-import java.util.Arrays;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import javax.swing.BorderFactory;
-import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.Timer;
 import pro.hirdman.radar.jobs.Job;
 import pro.hirdman.radar.jobs.JobState;
@@ -38,13 +42,20 @@ import pro.hirdman.radar.ui.HostView;
 public final class RadarEditor implements ExtensionProvidedHttpRequestEditor {
 
     static final String QUEUED = "Queued. The result shows here and in the Hirdman Radar tab.";
+    static final String CHECK_TIP = "Sends this host to the radar server now, even if it was checked in the last 24 h.";
+    static final String PRIVATE = "Private project is ticked in the Hirdman Radar tab, so nothing is sent to the server.";
 
     private final ResultStore store;
     private final Function<String, Job> check;
+    private final BooleanSupplier offForProject;
     private final JPanel panel = new JPanel(new BorderLayout(0, 8));
-    private final JPanel lines = new JPanel();
-    final JButton button = new JButton("Check again");
+    /** One read-only text, so numbers and dates can be selected and copied into a report. */
+    final JTextArea text = new JTextArea();
+    final JButton button = button("Check this host");
+    final JButton showButton = button("Show in Hirdman Radar tab");
     final JLabel queuedLabel = plain(new JLabel());
+    /** Drawn as a plain line of text; opens hirdman.pro in the browser. */
+    final JButton fullCheck = button(HostView.FULL_CHECK);
     private HttpRequestResponse current;
     private String host;
     /** The check queued from this view and the row at that moment; null when there is none. */
@@ -52,18 +63,43 @@ public final class RadarEditor implements ExtensionProvidedHttpRequestEditor {
     private HostResult queuedFrom;
     private final Timer ticker = new Timer(1000, e -> refresh());
 
-    /** {@code check} queues a leak check of one host; {@code theme} applies Burp's look to the view. */
-    public RadarEditor(ResultStore store, Function<String, Job> check, Consumer<Component> theme) {
+    /**
+     * {@code check} queues a leak check of one host; {@code show} shows a host in the plugin tab, as the context menu
+     * does; {@code open} opens a link in the browser; {@code theme} applies Burp's look to the view.
+     */
+    public RadarEditor(ResultStore store, Function<String, Job> check, Consumer<String> show, BooleanSupplier offForProject,
+            Consumer<String> open, Consumer<Component> theme) {
         this.store = store;
         this.check = check;
-        lines.setLayout(new BoxLayout(lines, BoxLayout.Y_AXIS));
+        this.offForProject = offForProject;
+        text.setEditable(false);
+        text.setLineWrap(true);
+        text.setWrapStyleWord(true);
+        JScrollPane scroll = new JScrollPane(text);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         actions.add(button);
+        actions.add(showButton);
         actions.add(queuedLabel);
+        fullCheck.setBorderPainted(false);
+        fullCheck.setContentAreaFilled(false);
+        fullCheck.setMargin(new Insets(0, 0, 0, 0));
+        fullCheck.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        fullCheck.setToolTipText("Opens hirdman.pro in the browser.");
+        fullCheck.setVisible(false);
+        JPanel more = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        more.add(fullCheck);
         panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
-        panel.add(lines, BorderLayout.NORTH);
-        panel.add(actions, BorderLayout.CENTER);
+        panel.add(actions, BorderLayout.NORTH);
+        panel.add(scroll, BorderLayout.CENTER);
+        panel.add(more, BorderLayout.SOUTH);
         button.addActionListener(e -> checkAgain());
+        showButton.addActionListener(e -> {
+            if (host != null) {
+                show.accept(host);
+            }
+        });
+        fullCheck.addActionListener(e -> open.accept(HostView.FULL_CHECK_URL));
         panel.addHierarchyListener(e -> {
             if ((e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) != 0 && panel.isShowing()) {
                 refresh();
@@ -92,10 +128,16 @@ public final class RadarEditor implements ExtensionProvidedHttpRequestEditor {
             job = null;
         }
         boolean waiting = job != null && !job.state().finished();
-        lines.removeAll();
-        row.ifPresent(r -> HostView.lines(r).forEach(t -> lines.add(label(t))));
-        button.setText(row.map(HostView::button).orElse("Check again"));
-        button.setEnabled(row.isPresent() && !waiting);
+        boolean off = offForProject.getAsBoolean();
+        String shownText = row.map(r -> String.join("\n", HostView.lines(r, Instant.now()))).orElse("");
+        if (!shownText.equals(text.getText())) {
+            // Set only on a change, so the ticker does not drop a selection being copied.
+            text.setText(shownText);
+            text.setCaretPosition(0);
+        }
+        fullCheck.setVisible(row.filter(HostView::suggestsFullCheck).isPresent());
+        button.setEnabled(row.isPresent() && !waiting && !off);
+        button.setToolTipText(off ? PRIVATE : CHECK_TIP);
         // A job waiting for the hourly limit says when it goes on; the tip holds what the narrow label cuts.
         String note;
         if (job == null) {
@@ -107,8 +149,8 @@ public final class RadarEditor implements ExtensionProvidedHttpRequestEditor {
         }
         queuedLabel.setText(note);
         tip(queuedLabel, note.isEmpty() ? null : note);
-        lines.revalidate();
-        lines.repaint();
+        panel.revalidate();
+        panel.repaint();
         if (waiting && panel.isShowing()) {
             ticker.start();
         } else {
@@ -118,7 +160,7 @@ public final class RadarEditor implements ExtensionProvidedHttpRequestEditor {
 
     private void checkAgain() {
         Optional<HostResult> row = row();
-        if (row.isPresent()) {
+        if (row.isPresent() && !offForProject.getAsBoolean()) {
             job = check.apply(host);
             queuedFrom = row.get();
             refresh();
@@ -130,7 +172,7 @@ public final class RadarEditor implements ExtensionProvidedHttpRequestEditor {
     }
 
     List<String> lineTexts() {
-        return Arrays.stream(lines.getComponents()).map(c -> ((JLabel) c).getText()).toList();
+        return text.getText().isEmpty() ? List.of() : List.of(text.getText().split("\n", -1));
     }
 
     @Override

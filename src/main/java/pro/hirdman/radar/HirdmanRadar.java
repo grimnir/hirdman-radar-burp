@@ -31,6 +31,7 @@ import pro.hirdman.radar.jobs.MetaGate;
 import pro.hirdman.radar.jobs.Sleeper;
 import pro.hirdman.radar.model.ResultStore;
 import pro.hirdman.radar.traffic.NewHostBatcher;
+import pro.hirdman.radar.ui.Browser;
 import pro.hirdman.radar.ui.Edt;
 import pro.hirdman.radar.ui.RadarTab;
 
@@ -106,7 +107,8 @@ public final class HirdmanRadar implements BurpExtension {
         api.userInterface().registerSuiteTab("Hirdman Radar", tab);
         api.userInterface().registerContextMenuItemsProvider(new RadarMenu(queue, tab, tab::reveal));
         api.userInterface().registerHttpRequestEditorProvider(context -> new RadarEditor(store,
-                host -> queue.checkAgain(List.of(host)), api.userInterface()::applyThemeToComponent));
+                host -> queue.checkAgain(List.of(host)), host -> RadarMenu.show(tab, tab::reveal, List.of(host)), projectSwitch::off,
+                url -> Browser.open(url, log::logToError), api.userInterface()::applyThemeToComponent));
 
         NewHostBatcher batcher = new NewHostBatcher(Duration.ofSeconds(60), Duration.ofHours(24),
                 store::lastChecked, () -> settings.snapshot().serverHost());
