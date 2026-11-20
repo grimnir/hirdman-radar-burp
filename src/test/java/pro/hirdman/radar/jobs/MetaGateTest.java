@@ -38,6 +38,15 @@ class MetaGateTest {
     }
 
     @Test
+    void theAnswerIsGivenOnlyForItsOwnServer() {
+        // A job must not take the limits of a server the user switched to meanwhile.
+        MetaGate g = new MetaGate();
+        g.passed(LOCAL, FakeRadar.META);
+        assertEquals(Optional.empty(), g.lastFor(PROD));
+        assertEquals(Optional.of(FakeRadar.META), g.lastFor(LOCAL));
+    }
+
+    @Test
     void listenersHearNewMeta() {
         MetaGate g = new MetaGate();
         AtomicInteger calls = new AtomicInteger();

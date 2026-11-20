@@ -302,15 +302,17 @@ public final class JobRunner {
     }
 
     private Meta meta(Run c) throws Stop, InterruptedException {
-        if (gate.needsCheck(c.server)) {
-            Meta m = call(c, Radar::meta);
-            gate.passed(c.server, m);
-            String need = m.minPluginVersion();
-            if (need != null && !Version.atLeast(Version.current(), need)) {
-                error(c, "Hirdman Radar: this plugin is older than the server expects (" + Json.oneLine(need) + ")");
-            }
+        Optional<Meta> known = gate.lastFor(c.server);
+        if (known.isPresent()) {
+            return known.get();
         }
-        return gate.last().orElseThrow();
+        Meta m = call(c, Radar::meta);
+        gate.passed(c.server, m);
+        String need = m.minPluginVersion();
+        if (need != null && !Version.atLeast(Version.current(), need)) {
+            error(c, "Hirdman Radar: this plugin is older than the server expects (" + Json.oneLine(need) + ")");
+        }
+        return m;
     }
 
     private void findSubdomains(Run c) throws Stop, InterruptedException {

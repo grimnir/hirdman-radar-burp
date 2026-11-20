@@ -32,6 +32,11 @@ public final class MetaGate {
         return Optional.ofNullable(meta);
     }
 
+    /** The last answer when it came from {@code s}, read at once with its server. */
+    public synchronized Optional<Meta> lastFor(URI s) {
+        return s.equals(server) ? Optional.ofNullable(meta) : Optional.empty();
+    }
+
     public void addListener(Consumer<Meta> onMeta) {
         listeners.add((s, m) -> onMeta.accept(m));
     }
