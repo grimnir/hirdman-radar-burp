@@ -96,6 +96,8 @@ class ResponsesTest {
         assertEquals("{\"domain\":\"example.com\",\"rescan\":true}", JobRequest.ofDomain("example.com", true).toJson());
         assertEquals("{\"domain\":\"example.com\",\"rescan\":false}", JobRequest.ofDomain("example.com", false).toJson());
         assertEquals("{\"hosts\":[\"a\",\"b\"]}", JobRequest.ofHosts(List.of("a", "b")).toJson());
+        assertEquals("{\"hosts\":[\"a\",\"b\"],\"rescan\":true}", JobRequest.ofHosts(List.of("a", "b"), true).toJson());
+        assertEquals("{\"hosts\":[\"a\"]}", JobRequest.ofHosts(List.of("a"), false).toJson());
     }
 
     @Test

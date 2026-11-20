@@ -702,8 +702,32 @@ class JobRunnerTest {
         radar.polls.add(page(1, true, check("a.example.com", true), done(1, 0)));
         Job j = new Job(JobKind.CHECK_HOSTS, null, List.of("a.example.com"), false, false, true, x -> { });
         run(j);
-        assertEquals(List.of(JobRequest.ofHosts(List.of("a.example.com"))), radar.started);
+        // Asked for by the user, so the server's shared 24-hour result is skipped too.
+        assertEquals(List.of(JobRequest.ofHosts(List.of("a.example.com"), true)), radar.started);
         assertEquals("Done: 1 host, 0 with leaks", j.status());
+    }
+
+    @Test
+    void automaticChecksTakeTheServersSharedResults() {
+        radar.polls.add(page(1, true, check("a.example.com", true), done(1, 0)));
+        run(job(JobKind.CHECK_HOSTS, null, List.of("a.example.com"), false));
+        assertEquals(List.of(JobRequest.ofHosts(List.of("a.example.com"), false)), radar.started);
+        assertTrue(radar.calls.contains("start {\"hosts\":[\"a.example.com\"]}"), radar.calls.toString());
+    }
+
+    @Test
+    void aRetriedCheckAgainStillSkipsTheSharedResults() {
+        radar.starts.add(http(400, "{\"error\":\"bad\"}"));
+        radar.polls.add(page(1, true, check("a.example.com", true), done(1, 0)));
+        Job j = new Job(JobKind.CHECK_HOSTS, null, List.of("a.example.com"), false, false, true, x -> { });
+        run(j);
+        assertEquals(JobState.FAILED, j.state());
+        assertTrue(j.resetForRetry());
+        run(j);
+        assertEquals(JobState.DONE, j.state());
+        assertEquals(List.of("start {\"hosts\":[\"a.example.com\"],\"rescan\":true}",
+                "start {\"hosts\":[\"a.example.com\"],\"rescan\":true}"),
+                radar.calls.stream().filter(c -> c.startsWith("start ")).toList());
     }
 
     @Test
