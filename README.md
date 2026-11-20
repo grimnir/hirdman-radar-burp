@@ -24,7 +24,7 @@ from the leak database behind hirdman.pro. The plugin is free and needs no
 account or API key. In Burp's extension list it is called
 *Hirdman Radar: Subdomain Leak Check*.
 
-## What it looks like during a test
+## How it works
 
 1. Type a domain on the *Hirdman Radar* tab and click *Check for leaks*, or
    select a request in Proxy and choose
@@ -33,9 +33,6 @@ account or API key. In Burp's extension list it is called
    the most important ones against the leak database.
 3. The table fills in as the check runs. Hosts with findings get Burp issues,
    and login pages are marked from the traffic Burp has already seen.
-
-An infostealer log record appears when malware takes the saved logins from an
-infected device and one of them is for this host.
 
 ![The Hirdman Radar tab after a domain check: risk, scope and four counts for each subdomain](docs/screenshot-results.png)
 
@@ -49,11 +46,12 @@ The search runs on the HIRDMAN server, and Burp gets the finished list.
 
 1. The server queries four different sources in parallel, Certificate
    Transparency logs among them, then merges the lists and removes duplicates.
-2. It drops infrastructure names such as mx, smtp, pop, imap, ns, dns, www,
-   proxy, sip and voip.
+2. It drops infrastructure names such as mx, smtp, pop, imap, numbered mail
+   hosts (mail2), ns, dns, www, proxy, sip and voip, and monitoring hosts
+   (grafana, zabbix, nagios, prometheus).
 3. It sorts the remaining subdomains by importance. Mail, remote access and
    sign-in come first (mail, owa, vpn, sso, adfs, citrix), then internal
-   systems (admin, gitlab, jira, confluence, crm, jenkins, grafana), then APIs
+   systems (admin, gitlab, jira, confluence, crm, jenkins), then APIs
    and test environments (api, dev, test, staging, uat). Trailing digits and
    hyphenated parts of a name do not change the order: vpn2 counts as vpn, and
    sso-msk as sso.
@@ -67,7 +65,7 @@ The search runs on the HIRDMAN server, and Burp gets the finished list.
 |---|---|
 | *Risk* | The highest level among the host's findings |
 | *Scope* | Whether the host is in Burp's target scope |
-| *Infostealer* | Infostealer log records that mention the host |
+| *Infostealer* | Infostealer log records that mention the host: malware took saved logins, cookies or an email address at the host from an infected device |
 | *Work* | Breach records with work email addresses |
 | *Personal* | Breach records with credentials for the host, whoever they belong to |
 | *DB rec* | Records in breached databases that mention the host together with an email or URL |
@@ -108,12 +106,29 @@ The search runs on the HIRDMAN server, and Burp gets the finished list.
   rules whose tool scope includes *Extensions* apply to them, and so do platform
   authentication entries for all hosts. If such rules add credentials, exclude
   the server host from them.
-- The plugin keeps answers only about the hosts its job asked about. Answers
-  about other hosts are dropped.
 
-## Limits without a key
+If the server answers about hosts the job did not ask about, the plugin ignores
+those answers.
 
-Up to 50 hosts per check and 300 hosts per hour from your address. A domain can
+## What the server keeps
+
+- A domain scan is saved on the server for 90 days, together with the time and
+  the address it came from.
+- Anyone who scans the same domain within 30 minutes gets that saved scan
+  instead of a new one. The site shows the counts and dates of a domain's past
+  scans to anyone who looks the domain up, without saying who ran them.
+- The server log records each request with the client address.
+- Questions about stored data: info@hirdman.pro.
+
+## Acceptable use
+
+Use the plugin only for testing you are authorised to do. Report misuse to
+info@hirdman.pro.
+
+## Limits
+
+Free use allows up to 50 hosts per check and 300 hosts per hour from your
+address. A domain can
 be rescanned once an hour. A domain scan does not count against the hourly host
 limit. The tab shows the server's current limits, and before a large check it
 says how long the check will take. A check that hits the hourly limit continues
@@ -144,12 +159,12 @@ against local fakes and never reach the internet.
 *Settings > Extensions > Hirdman Radar*: Server URL and TLS verification; issues
 (create automatically, out-of-scope hosts, lowest severity); site map items for
 discovered subdomains; checking hosts from traffic; one re-check of hosts that
-could not be checked; the number of retries after network failures;
+could not be checked; the number of attempts when the server is unavailable;
 *Always rescan*.
 
 ## About the data
 
-This is a partial check, about a third of a full HIRDMAN check. The plugin shows
+This is a partial check, about a third of a full HIRDMAN review. The plugin shows
 how many records were found, and a full check names the specific accounts,
 devices and sessions. More about it at [hirdman.pro](https://hirdman.pro).
 
@@ -160,6 +175,8 @@ plugin, including on paid engagements. You can pass copies on together with the
 license text and the `Required Notice` line. You cannot use the plugin's code to
 make a product that competes with it or with HIRDMAN products built on it. This
 is a short summary; the full text in [LICENSE](LICENSE) is what applies.
+LICENSE also gives PortSwigger permission to build the plugin and distribute it
+through the BApp Store.
 
 The jar bundles Gson and Error Prone annotations under the Apache License 2.0,
 see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
