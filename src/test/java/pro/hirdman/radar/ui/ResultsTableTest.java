@@ -217,21 +217,58 @@ class ResultsTableTest {
     }
 
     @Test
-    void columnsAreSizedToTheirContentAndHostTakesTheRest() {
+    void columnsAreSizedToTheirContentAndStatusTakesTheRest() {
         ResultsTable t = new ResultsTable(new ResultsTableModel(new ResultStore(), h -> true));
         java.awt.FontMetrics fm = t.getFontMetrics(t.getFont());
         javax.swing.table.TableColumnModel cols = t.getColumnModel();
-        assertTrue(cols.getColumn(0).getPreferredWidth() >= fm.stringWidth("subdomain.example-domain.com"));
         assertTrue(cols.getColumn(ResultsTableModel.STATUS).getPreferredWidth() >= fm.stringWidth("Checked (nothing found)"));
         for (int c = 0; c < cols.getColumnCount(); c++) {
             // The name and the sort arrow fit.
             assertTrue(cols.getColumn(c).getPreferredWidth() >= fm.stringWidth(t.getColumnName(c)) + 16, t.getColumnName(c));
         }
         assertTrue(cols.getColumn(2).getPreferredWidth() < cols.getColumn(ResultsTableModel.STATUS).getPreferredWidth());
-        assertEquals(Integer.MAX_VALUE, cols.getColumn(0).getMaxWidth());
-        for (int c = 1; c < cols.getColumnCount(); c++) {
+        assertEquals(Integer.MAX_VALUE, cols.getColumn(ResultsTableModel.STATUS).getMaxWidth());
+        for (int c = 0; c < cols.getColumnCount() - 1; c++) {
             assertTrue(cols.getColumn(c).getMaxWidth() < Integer.MAX_VALUE, t.getColumnName(c));
         }
+    }
+
+    @Test
+    void hostIsAsWideAsTheLongestNameAndStatusGetsTheRest() {
+        checked("a.example.com", 0, 0, 0, 0, null);
+        checked("a-rather-long-subdomain-name.example.com", 0, 0, 0, 0, null);
+        show();
+        java.awt.FontMetrics fm = table.getFontMetrics(table.getFont());
+        javax.swing.table.TableColumnModel cols = table.getColumnModel();
+        javax.swing.table.TableColumn host = cols.getColumn(ResultsTableModel.HOST);
+        int longest = fm.stringWidth("a-rather-long-subdomain-name.example.com");
+        assertTrue(host.getPreferredWidth() >= longest && host.getPreferredWidth() <= longest + 32, host.getPreferredWidth() + "");
+        assertEquals(host.getPreferredWidth(), host.getMaxWidth());
+        table.setSize(2000, 400);
+        table.doLayout();
+        assertEquals(host.getPreferredWidth(), host.getWidth());
+        int others = 0;
+        for (int c = 0; c < ResultsTableModel.STATUS; c++) {
+            assertEquals(cols.getColumn(c).getPreferredWidth(), cols.getColumn(c).getWidth(), table.getColumnName(c));
+            others += cols.getColumn(c).getWidth();
+        }
+        assertEquals(2000 - others, cols.getColumn(ResultsTableModel.STATUS).getWidth());
+        // The widest name grows the column on the next refresh.
+        checked("an-even-longer-subdomain-name-than-the-other-one.example.com", 0, 0, 0, 0, null);
+        model.refresh();
+        assertTrue(host.getMaxWidth() >= fm.stringWidth("an-even-longer-subdomain-name-than-the-other-one.example.com"));
+    }
+
+    @Test
+    void tabLeavesTheTable() {
+        java.util.Set<java.awt.AWTKeyStroke> forward = table.getFocusTraversalKeys(java.awt.KeyboardFocusManager.FORWARD_TRAVERSAL_KEYS);
+        java.util.Set<java.awt.AWTKeyStroke> backward = table.getFocusTraversalKeys(java.awt.KeyboardFocusManager.BACKWARD_TRAVERSAL_KEYS);
+        assertTrue(forward.contains(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_TAB, 0)), forward.toString());
+        assertTrue(backward.contains(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_TAB,
+                java.awt.event.InputEvent.SHIFT_DOWN_MASK)), backward.toString());
+        table.updateUI();
+        assertTrue(table.getFocusTraversalKeys(java.awt.KeyboardFocusManager.FORWARD_TRAVERSAL_KEYS)
+                .contains(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_TAB, 0)));
     }
 
     @Test
