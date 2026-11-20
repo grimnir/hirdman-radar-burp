@@ -118,6 +118,9 @@ those answers.
 - Anyone who scans the same domain within 30 minutes gets that saved scan
   instead of a new one. The site shows the counts and dates of a domain's past
   scans to anyone who looks the domain up, without saying who ran them.
+- A host check result is kept for 24 hours and shared: a check of the same
+  host from anyone in that time gets the saved result and does not count
+  against the hourly limit.
 - The server log records each request with the client address.
 - Questions about stored data: info@hirdman.pro.
 
