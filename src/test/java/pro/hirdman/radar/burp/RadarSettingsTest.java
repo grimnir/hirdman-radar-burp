@@ -2,7 +2,6 @@ package pro.hirdman.radar.burp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static pro.hirdman.radar.burp.Fakes.fake;
@@ -75,8 +74,6 @@ class RadarSettingsTest {
     }
 
     final List<String> shown = new ArrayList<>();
-    /** Settings the panel was built with, as "name=default". */
-    final List<String> created = new ArrayList<>();
 
     /** Burp's settings factories, faked: the panel answers from {@link #values}, {@link #shown} lists its labels. */
     SettingsPanelWithData fakeBurpFactory() {
@@ -91,7 +88,6 @@ class RadarSettingsTest {
                 return builder.get();
             }
             shown.add((String) a[0]);
-            created.add(a[0] + "=" + (a[a.length - 1] instanceof List<?> ? a[1] : a[a.length - 1]));
             return fake(SettingsPanelSetting.class, Map.of());
         });
         return panel;
@@ -114,7 +110,7 @@ class RadarSettingsTest {
     void communityEditionHasNoIssueSettings() {
         fakeBurpFactory();
         values.put("Create issues automatically", true);
-        RadarSettings settings = new RadarSettings(api(new ArrayList<>()), () -> false, false, label -> null);
+        RadarSettings settings = new RadarSettings(api(new ArrayList<>()), () -> false, false);
         assertEquals(RadarSettings.LABELS.stream()
                 .filter(l -> !List.of("Create issues automatically", "Include out-of-scope hosts", "Lowest severity to report").contains(l))
                 .toList(), shown);
@@ -130,7 +126,7 @@ class RadarSettingsTest {
     @Test
     void professionalShowsEverySetting() {
         fakeBurpFactory();
-        new RadarSettings(api(new ArrayList<>()), () -> false, true, label -> null);
+        new RadarSettings(api(new ArrayList<>()), () -> false, true);
         assertEquals(RadarSettings.LABELS, shown);
     }
 
@@ -140,7 +136,7 @@ class RadarSettingsTest {
         List<SettingsPanel> registered = new ArrayList<>();
         values.put(TRAFFIC, true);
         AtomicBoolean projectOff = new AtomicBoolean();
-        RadarSettings settings = new RadarSettings(api(registered), projectOff::get, true, label -> null);
+        RadarSettings settings = new RadarSettings(api(registered), projectOff::get, true);
         assertEquals(1, registered.size());
         assertSame(panel, registered.get(0));
         assertEquals(true, settings.watchTraffic());
@@ -208,100 +204,5 @@ class RadarSettingsTest {
     @Test
     void everyLabelFitsBurpsStorage() {
         RadarSettings.LABELS.forEach(l -> assertTrue(RadarSettings.STORED_PREFIX.length() + l.length() <= 80, l));
-    }
-
-    @Test
-    void renamedSettingsStartFromTheValueSavedUnderTheOldLabel() {
-        Map<String, String> old = Map.of(
-                "Verify the server's TLS certificate (turn off only behind a proxy that re-signs HTTPS)", "false",
-                "Check new hosts seen in traffic (in scope only, batched every 60 s, skip hosts checked in the last 24 h)", "true",
-                "Attempts when the server is unavailable", "3",
-                "Always rescan (ignore the server's 30-minute cache)", "true");
-        fakeBurpFactory();
-        new RadarSettings(api(new ArrayList<>()), () -> false, true, old::get);
-        assertTrue(created.containsAll(List.of(VERIFY_TLS + "=false", TRAFFIC + "=true", ATTEMPTS + "=3", ALWAYS_RESCAN + "=true")),
-                created.toString());
-        assertEquals(RadarSettings.LABELS.size(), created.size());
-    }
-
-    @Test
-    void withoutOldValuesTheDefaultsStay() {
-        Map<String, String> odd = Map.of("Attempts when the server is unavailable", "many",
-                "Always rescan (ignore the server's 30-minute cache)", "yes");
-        fakeBurpFactory();
-        new RadarSettings(api(new ArrayList<>()), () -> false, true, odd::get);
-        assertTrue(created.containsAll(List.of(VERIFY_TLS + "=true", TRAFFIC + "=false", ATTEMPTS + "=5", ALWAYS_RESCAN + "=false")),
-                created.toString());
-        created.clear();
-        fakeBurpFactory();
-        new RadarSettings(api(new ArrayList<>()), () -> false, true,
-                Map.of("Attempts when the server is unavailable", "40")::get);
-        assertTrue(created.contains(ATTEMPTS + "=10"), created.toString());
-    }
-
-    @Test
-    void oldValuesAreReadFromBurpsNodeAndNothingIsWritten() throws Exception {
-        MemoryPreferences root = new MemoryPreferences(null, "");
-        assertNull(RadarSettings.savedIn(root, "Hirdman Radar: Test").apply("Attempts when the server is unavailable"));
-        assertFalse(root.nodeExists("burp/extensions/_Hirdman Radar: Test"), "reading must not create Burp's node");
-        java.util.prefs.Preferences node = root.node("burp/extensions/_Hirdman Radar: Test");
-        node.put("__managedSettings__Attempts when the server is unavailable", "3");
-        assertEquals("3", RadarSettings.savedIn(root, "Hirdman Radar: Test").apply("Attempts when the server is unavailable"));
-        // Too long for a key: Java refuses it, so there is nothing to read.
-        assertNull(RadarSettings.savedIn(root, "Hirdman Radar: Test").apply("x".repeat(100)));
-        assertNull(RadarSettings.savedIn(root, "Hirdman Radar: Test").apply(null));
-    }
-
-    /** Java preferences in memory, so the test never touches the user's own. */
-    static final class MemoryPreferences extends java.util.prefs.AbstractPreferences {
-
-        private final Map<String, String> values = new HashMap<>();
-        private final Map<String, MemoryPreferences> children = new HashMap<>();
-
-        MemoryPreferences(MemoryPreferences parent, String name) {
-            super(parent, name);
-        }
-
-        @Override
-        protected void putSpi(String key, String value) {
-            values.put(key, value);
-        }
-
-        @Override
-        protected String getSpi(String key) {
-            return values.get(key);
-        }
-
-        @Override
-        protected void removeSpi(String key) {
-            values.remove(key);
-        }
-
-        @Override
-        protected void removeNodeSpi() {
-        }
-
-        @Override
-        protected String[] keysSpi() {
-            return values.keySet().toArray(new String[0]);
-        }
-
-        @Override
-        protected String[] childrenNamesSpi() {
-            return children.keySet().toArray(new String[0]);
-        }
-
-        @Override
-        protected java.util.prefs.AbstractPreferences childSpi(String name) {
-            return children.computeIfAbsent(name, n -> new MemoryPreferences(this, n));
-        }
-
-        @Override
-        protected void syncSpi() {
-        }
-
-        @Override
-        protected void flushSpi() {
-        }
     }
 }

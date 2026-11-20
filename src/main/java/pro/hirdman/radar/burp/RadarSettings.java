@@ -13,17 +13,14 @@ import burp.api.montoya.ui.settings.SettingsPanelSetting;
 import burp.api.montoya.ui.settings.SettingsPanelWithData;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.function.BooleanSupplier;
-import java.util.function.UnaryOperator;
-import java.util.prefs.Preferences;
 import pro.hirdman.radar.config.Options;
 import pro.hirdman.radar.model.Risk;
 
 /**
  * Settings > Extensions > Hirdman Radar, kept in Burp's user settings. Burp takes one panel per extension, so the
- * per-project off switch lives in the plugin tab. Labels double as storage keys, so a renamed setting starts from the
- * value saved under its old label.
+ * per-project off switch lives in the plugin tab. Labels double as storage keys: a renamed setting starts from its
+ * default.
  */
 public final class RadarSettings {
 
@@ -40,13 +37,7 @@ public final class RadarSettings {
     static final String ALWAYS_RESCAN = "Always rescan (at most once an hour per domain)";
     static final List<String> LABELS = List.of(SERVER_URL, VERIFY_TLS, AUTO_ISSUES, OUT_OF_SCOPE, LOWEST, SITE_MAP, TRAFFIC, HIGHLIGHT, RECHECK,
             ATTEMPTS, ALWAYS_RESCAN);
-    /** Labels of earlier versions, by the current label. */
-    static final Map<String, String> RENAMED = Map.of(
-            VERIFY_TLS, "Verify the server's TLS certificate (turn off only behind a proxy that re-signs HTTPS)",
-            TRAFFIC, "Check new hosts seen in traffic (in scope only, batched every 60 s, skip hosts checked in the last 24 h)",
-            ATTEMPTS, "Attempts when the server is unavailable",
-            ALWAYS_RESCAN, "Always rescan (ignore the server's 30-minute cache)");
-    /** How Burp names a panel value in its user settings. */
+    /** How Burp names a panel value in its user settings; Java keeps such keys to 80 characters. */
     static final String STORED_PREFIX = "__managedSettings__";
     private static final List<Risk> LEVELS = List.of(Risk.HIGH, Risk.MEDIUM, Risk.LOW);
     static final List<String> SEVERITIES = LEVELS.stream().map(Risk::label).toList();
@@ -57,15 +48,14 @@ public final class RadarSettings {
 
     /**
      * {@code issues}: Burp has issues (not Community Edition), so the panel shows the issue settings.
-     * {@code saved} gives the raw value Burp keeps under a label, or null; it only serves renamed settings.
      */
-    public RadarSettings(MontoyaApi api, BooleanSupplier offForProject, boolean issues, UnaryOperator<String> saved) {
+    public RadarSettings(MontoyaApi api, BooleanSupplier offForProject, boolean issues) {
         this.offForProject = offForProject;
         this.issues = issues;
         Options d = Options.defaults();
         List<SettingsPanelSetting> settings = new ArrayList<>(List.of(
                 stringSetting(SERVER_URL, d.serverUrl()),
-                booleanSetting(VERIFY_TLS, flag(saved, VERIFY_TLS, true))));
+                booleanSetting(VERIFY_TLS, true)));
         if (issues) {
             settings.addAll(List.of(
                     booleanSetting(AUTO_ISSUES, d.autoIssues()),
@@ -74,11 +64,11 @@ public final class RadarSettings {
         }
         settings.addAll(List.of(
                 booleanSetting(SITE_MAP, d.addToSiteMap()),
-                booleanSetting(TRAFFIC, flag(saved, TRAFFIC, d.watchTraffic())),
+                booleanSetting(TRAFFIC, d.watchTraffic()),
                 booleanSetting(HIGHLIGHT, false),
                 booleanSetting(RECHECK, d.recheckNotChecked()),
-                integerSetting(ATTEMPTS, attempts(saved, d.attempts())),
-                booleanSetting(ALWAYS_RESCAN, flag(saved, ALWAYS_RESCAN, d.alwaysRescan()))));
+                integerSetting(ATTEMPTS, d.attempts()),
+                booleanSetting(ALWAYS_RESCAN, d.alwaysRescan())));
         panel = SettingsPanelBuilder.settingsPanel()
                 .withPersistence(SettingsPanelPersistence.USER_SETTINGS)
                 .withTitle("Hirdman Radar")
@@ -86,47 +76,6 @@ public final class RadarSettings {
                 .withSettings(settings.toArray(SettingsPanelSetting[]::new))
                 .build();
         api.userInterface().registerSettingsPanel(panel);
-    }
-
-    /**
-     * Reads what Burp saved for this extension, never writing: Burp keeps panel values in Java preferences under
-     * burp/extensions/_name. Anything it cannot read, a key Java finds too long included, is null.
-     */
-    public static UnaryOperator<String> savedByBurp(String extensionName) {
-        return savedIn(Preferences.userRoot(), extensionName);
-    }
-
-    static UnaryOperator<String> savedIn(Preferences root, String extensionName) {
-        String path = "burp/extensions/_" + extensionName;
-        return label -> {
-            try {
-                return label == null || !root.nodeExists(path) ? null : root.node(path).get(STORED_PREFIX + label, null);
-            } catch (Exception e) {
-                // BackingStoreException, a key too long, a removed node: nothing to carry over.
-                return null;
-            }
-        };
-    }
-
-    /** The value saved under the setting's old label, or {@code fallback}. */
-    private static boolean flag(UnaryOperator<String> saved, String label, boolean fallback) {
-        String old = saved.apply(RENAMED.get(label));
-        if ("true".equals(old)) {
-            return true;
-        }
-        if ("false".equals(old)) {
-            return false;
-        }
-        return fallback;
-    }
-
-    private static int attempts(UnaryOperator<String> saved, int fallback) {
-        try {
-            return Math.clamp(Integer.parseInt(saved.apply(RENAMED.get(ATTEMPTS)).trim()), Options.MIN_ATTEMPTS, Options.MAX_ATTEMPTS);
-        } catch (RuntimeException e) {
-            // None saved, or not a number.
-            return fallback;
-        }
     }
 
     /** Current values; cheap, so read before every job. */
