@@ -54,7 +54,7 @@ public final class BurpOrganizer {
     /** Sends the login page of each row that has one and returns the event log line. */
     public String send(List<HostResult> rows) {
         Map<String, HostResult> byHost = new LinkedHashMap<>();
-        rows.stream().filter(r -> r.login() != null).forEach(r -> byHost.put(r.host().toLowerCase(Locale.ROOT), r));
+        rows.stream().filter(r -> r.login() != null).forEach(r -> byHost.put(key(r), r));
         if (byHost.isEmpty()) {
             return "Hirdman Radar: none of the selected hosts has a login page";
         }
@@ -73,10 +73,10 @@ public final class BurpOrganizer {
                 continue;
             }
             // A note the user left on the item stays in front of the radar's.
-            Annotations a = item.annotations();
-            String old = a.notes() == null ? "" : a.notes().strip();
+            Annotations annotations = item.annotations();
+            String userNote = annotations.notes() == null ? "" : annotations.notes().strip();
             String note = note(e.getValue());
-            organizer.accept(item.withAnnotations(a.withNotes(old.isEmpty() ? note : old + " | " + note)));
+            organizer.accept(item.withAnnotations(annotations.withNotes(userNote.isEmpty() ? note : userNote + " | " + note)));
             sent++;
         }
         String line = "Hirdman Radar: sent " + StatusText.count(sent, "login page") + " to Organizer";
@@ -95,7 +95,7 @@ public final class BurpOrganizer {
         for (HttpRequestResponse item : items) {
             HostResult row = item.hasResponse() ? hostOf(item.request().url(), byHost) : null;
             if (row != null && shows(item.request(), item.response(), row.login())) {
-                String host = row.host().toLowerCase(Locale.ROOT);
+                String host = key(row);
                 // An HTML page beats a script or an image under the same path.
                 HttpRequestResponse had = found.get(host);
                 if (had == null || !html(had.response()) && html(item.response())) {
@@ -112,7 +112,7 @@ public final class BurpOrganizer {
         history.apply(p -> {
             HostResult row = p.hasResponse() ? hostOf(p.finalRequest().url(), byHost) : null;
             if (row != null && shows(p.finalRequest(), p.originalResponse(), row.login())) {
-                newest.put(row.host().toLowerCase(Locale.ROOT), p);
+                newest.put(key(row), p);
             }
             return false;
         });
@@ -120,6 +120,10 @@ public final class BurpOrganizer {
         newest.forEach((host, p) -> found.put(host, pair.apply(p.finalRequest(), p.originalResponse())
                 .withAnnotations(p.annotations())));
         return found;
+    }
+
+    private static String key(HostResult row) {
+        return row.host().toLowerCase(Locale.ROOT);
     }
 
     /** The selected row whose host the URL is on, under its login path, or null. Only the URL string is read. */
@@ -137,7 +141,10 @@ public final class BurpOrganizer {
 
     /** "/owa/" also takes "/owa"; "/" takes every path. Case is ignored, as when the page was noted. */
     private static boolean startsWith(String path, LoginPage login) {
-        String prefix = login.path().endsWith("/") ? login.path().substring(0, login.path().length() - 1) : login.path();
+        String prefix = login.path();
+        if (prefix.endsWith("/")) {
+            prefix = prefix.substring(0, prefix.length() - 1);
+        }
         return path != null && path.regionMatches(true, 0, prefix, 0, prefix.length());
     }
 
@@ -155,7 +162,7 @@ public final class BurpOrganizer {
         return response != null && response.mimeType() == MimeType.HTML;
     }
 
-    /** Counts only: what the radar knows about the host, for the Organizer Notes column. */
+    /** Counts only, in the words of the Proxy history note: what the radar knows about the host. */
     static String note(HostResult r) {
         if (!r.checked()) {
             return "Hirdman Radar: not checked for leaks yet";
@@ -165,10 +172,10 @@ public final class BurpOrganizer {
             counts.add(StatusText.count(r.stealer(), "infostealer record"));
         }
         if (r.work() > 0) {
-            counts.add(StatusText.count(r.work(), "work email breach record"));
+            counts.add(StatusText.count(r.work(), "work account"));
         }
         if (r.personal() > 0) {
-            counts.add(StatusText.count(r.personal(), "host login breach record"));
+            counts.add(StatusText.count(r.personal(), "personal account"));
         }
         return counts.isEmpty() ? "Hirdman Radar: no leaks known for this host"
                 : "Hirdman Radar: " + String.join(", ", counts) + "; prioritise auth testing";

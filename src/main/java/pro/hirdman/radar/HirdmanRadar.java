@@ -110,8 +110,8 @@ public final class HirdmanRadar implements BurpExtension {
         // Dialogs open over Burp's main window (BApp Store rule), wherever the user is.
         Supplier<Component> suiteFrame = () -> api.userInterface().swingUtils().suiteFrame();
         RadarTab tab = Edt.call(() -> new RadarTab(api, store, queue, gate, settings::snapshot, projectSwitch, radar,
-                createIssues, siteMap::addSelected, new BurpOrganizer(api)::send, () -> BurpSiteMap.inScopeHosts(api.siteMap(), api.scope()::isInScope),
-                settings::verifyTls, suiteFrame));
+                createIssues, siteMap::addSelected, new BurpOrganizer(api)::send,
+                () -> BurpSiteMap.inScopeHosts(api.siteMap(), api.scope()::isInScope), settings::verifyTls, suiteFrame));
         tabRef.set(tab);
         api.userInterface().registerSuiteTab("Hirdman Radar", tab);
         api.userInterface().registerContextMenuItemsProvider(new RadarMenu(queue, tab, suiteFrame, projectSwitch::off,
