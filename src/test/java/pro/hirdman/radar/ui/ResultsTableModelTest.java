@@ -56,7 +56,8 @@ class ResultsTableModelTest {
         for (int i = 0; i < m.getColumnCount(); i++) {
             names.add(m.getColumnName(i));
         }
-        assertEquals(List.of("Host", "Risk", "Scope", "Infostealer", "Work", "Host logins", "DB records", "Latest breach", "Login page", "Status"), names);
+        assertEquals(List.of("Host", "Risk", "Scope", "Infostealer", "Work", "Host logins", "DB records", "Change", "Latest breach", "Login page",
+                "Status"), names);
     }
 
     @Test
@@ -133,7 +134,8 @@ class ResultsTableModelTest {
 
     @Test
     void filterLabelsAreTheSpecOnes() {
-        assertEquals(List.of("All", "With leaks", "Login page + leaks", "Not checked yet", "Check failed", "In scope"),
+        assertEquals(List.of("All", "With leaks", "Login page + leaks", "New since last check", "Not checked yet", "Check failed",
+                "In scope"),
                 List.of(ResultsFilter.values()).stream().map(ResultsFilter::toString).toList());
     }
 
@@ -200,9 +202,9 @@ class ResultsTableModelTest {
         ResultsTableModel m = model(h -> !h.startsWith("old2"));
         assertEquals("vpn.example.com", m.rowAt(0).host());
         assertEquals(List.of("old.example.com", "old2.example.com"), m.failed());
-        assertEquals("Host,Risk,Scope,Infostealer,Work,Host logins,DB records,Latest breach,Login page,Status\n"
-                + "vpn.example.com,High,in,12,3,40,7,,,Checked (leaks found)\n"
-                + "old2.example.com,,out,,,,,,,Check failed\n", m.csv(new int[] {0, 2}));
+        assertEquals("Host,Risk,Scope,Infostealer,Work,Host logins,DB records,Change,Latest breach,Login page,Status\n"
+                + "vpn.example.com,High,in,12,3,40,7,new,,,Checked (leaks found)\n"
+                + "old2.example.com,,out,,,,,,,,Check failed\n", m.csv(new int[] {0, 2}));
         store.noteLogin("vpn.example.com", new LoginPage(LoginPage.Kind.KNOWN_PATH, "FortiGate SSL VPN", "/remote/login"));
         m.refresh();
         assertEquals("FortiGate SSL VPN", m.getValueAt(0, ResultsTableModel.LOGIN));
@@ -277,7 +279,7 @@ class ResultsTableModelTest {
         checked("a.example.com", 0, 0, 0, 0, 0);
         store.noteLogin("a.example.com", new LoginPage(LoginPage.Kind.KNOWN_PATH, "=HYPERLINK(\"x\"),y", "/login"));
         ResultsTableModel m = model(h -> true);
-        assertEquals("a.example.com,,in,0,0,0,0,,\"'=HYPERLINK(\"\"x\"\"),y\",Checked (nothing found)",
+        assertEquals("a.example.com,,in,0,0,0,0,,,\"'=HYPERLINK(\"\"x\"\"),y\",Checked (nothing found)",
                 m.csv(new int[] {0}).split("\n")[1]);
     }
 
@@ -293,5 +295,38 @@ class ResultsTableModelTest {
         m.refresh();
         assertEquals(1, events.size());
         assertEquals("2", m.text(0, ResultsTableModel.STEALER));
+    }
+
+    @Test
+    void theChangeColumnComparesWithThePreviousCheck() {
+        checked("a.example.com", 3, 0, 1, 0, 0, finding("high"));
+        checked("b.example.com", 0, 0, 0, 0, 0);
+        notChecked("c.example.com");
+        store.apply(D, new Check(false, "a.example.com", 0, 1, 0, 0, 15, true, List.of(finding("high"))), Instant.EPOCH.plusSeconds(60));
+        ResultsTableModel m = model(h -> true);
+        assertEquals(List.of("a.example.com", "b.example.com", "c.example.com"), hosts(m));
+        assertEquals("Infostealer +12", m.getValueAt(0, ResultsTableModel.CHANGE));
+        assertEquals("", m.getValueAt(1, ResultsTableModel.CHANGE));
+        assertEquals("", m.getValueAt(2, ResultsTableModel.CHANGE));
+        assertEquals("Previous check 1970-01-01 00:00 UTC: Infostealer 3, Work 0, Host logins 1, DB records 0.", m.previousText(0));
+        assertEquals("First check of this host.", m.previousText(1));
+        assertEquals(null, m.previousText(2));
+    }
+
+    @Test
+    void newSinceLastCheckShowsRisesAndFirstChecksWithLeaks() {
+        checked("up.example.com", 3, 0, 0, 0, 0, finding("high"));
+        checked("down.example.com", 3, 0, 0, 0, 0, finding("high"));
+        checked("same.example.com", 3, 0, 0, 0, 0, finding("high"));
+        checked("clean.example.com", 0, 0, 0, 0, 0);
+        Instant later = Instant.EPOCH.plusSeconds(60);
+        store.apply(D, new Check(false, "up.example.com", 0, 0, 0, 0, 4, true, List.of(finding("high"))), later);
+        store.apply(D, new Check(false, "down.example.com", 0, 0, 0, 0, 1, true, List.of(finding("high"))), later);
+        store.apply(D, new Check(false, "same.example.com", 0, 0, 0, 0, 3, true, List.of(finding("high"))), later);
+        store.apply(D, new Check(false, "clean.example.com", 0, 0, 0, 0, 0, true, List.of()), later);
+        checked("first.example.com", 2, 0, 0, 0, 0, finding("high"));
+        ResultsTableModel m = model(h -> true);
+        m.setFilter(ResultsFilter.NEW_SINCE_LAST_CHECK);
+        assertEquals(List.of("first.example.com", "up.example.com"), hosts(m));
     }
 }

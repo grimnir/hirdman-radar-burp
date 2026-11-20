@@ -58,7 +58,8 @@ class ResultsExportTest {
         assertEquals("Infostealer records linked to host", finding.get("name").getAsString());
         assertEquals("high", finding.get("severity").getAsString());
         assertEquals("firm", finding.get("confidence").getAsString());
-        assertEquals(3, finding.size(), "server texts stay out: " + finding);
+        assertEquals("stealer", finding.get("kind").getAsString());
+        assertEquals(4, finding.size(), "server texts stay out: " + finding);
         assertEquals("2024-03", h.get("latest_breach").getAsString());
         JsonObject source = h.getAsJsonArray("breach_sources").get(1).getAsJsonObject();
         assertEquals("Collection #1", source.get("name").getAsString());
@@ -83,7 +84,7 @@ class ResultsExportTest {
         assertEquals("FortiGate SSL VPN", login.get("type").getAsString());
         assertEquals("/remote/login", login.get("path").getAsString());
         assertTrue(hosts.get(1).getAsJsonObject().get("login_page").isJsonNull());
-        assertTrue(ResultsExport.csv(List.of(r), h -> true).strip().endsWith(",FortiGate SSL VPN at /remote/login"),
+        assertTrue(ResultsExport.csv(List.of(r), h -> true).strip().endsWith(",FortiGate SSL VPN at /remote/login,"),
                 ResultsExport.csv(List.of(r), h -> true));
     }
 
@@ -98,11 +99,11 @@ class ResultsExportTest {
     void csvHasOneLinePerHost() {
         assertEquals("""
                 host,domain,status,risk,scope,stealer,work_accounts,personal_accounts,db_records,latest_breach,checked_at,breach_sources,\
-                findings,login_page
+                findings,login_page,change
                 vpn.example.com,example.com,Checked (leaks found),High,in,12,3,1,40,2024-03,2026-11-17T20:00:00Z,Stealer Logs: 12 (2024-03); \
-                Collection #1: 3,Infostealer records linked to host (high); Work accounts found in breaches (high),
-                old.example.com,example.com,Check failed,,out,,,,,,2026-11-17T20:00:00Z,,,
-                new.example.com,example.com,Not checked yet,,out,,,,,,,,,
+                Collection #1: 3,Infostealer records linked to host (high); Work accounts found in breaches (high),,
+                old.example.com,example.com,Check failed,,out,,,,,,2026-11-17T20:00:00Z,,,,
+                new.example.com,example.com,Not checked yet,,out,,,,,,,,,,
                 """, ResultsExport.csv(rows, h -> h.startsWith("vpn.")));
     }
 
@@ -111,7 +112,7 @@ class ResultsExportTest {
         HostResult odd = new HostResult("a.example.com", "example.com", HostStatus.CHECKED, 1, 0, 0, 0,
                 List.of(f("=HYPERLINK(\"http://x\",\"y\")", "low")), AT);
         String line = ResultsExport.csv(List.of(odd), h -> false).split("\n")[1];
-        assertTrue(line.endsWith(",\"'=HYPERLINK(\"\"http://x\"\",\"\"y\"\") (low)\","), line);
+        assertTrue(line.endsWith(",\"'=HYPERLINK(\"\"http://x\"\",\"\"y\"\") (low)\",,"), line);
         assertEquals("", ResultsExport.cell(""));
         assertEquals("'+1", ResultsExport.cell("+1"));
         assertEquals("'-1", ResultsExport.cell("-1"));
@@ -126,5 +127,27 @@ class ResultsExportTest {
     void fileNameNamesTheDomain() {
         assertEquals("hirdman-radar-example.com.json", ResultsExport.fileName("example.com", "json"));
         assertEquals("hirdman-radar-results.csv", ResultsExport.fileName(null, "csv"));
+    }
+
+    @Test
+    void theChangeSinceThePreviousCheckIsExported() {
+        HostResult again = leaky.withPrevious(new HostResult.Previous(2, 3, 1, 41, AT.minusSeconds(3600)));
+        HostResult first = leaky.withPrevious(HostResult.Previous.FIRST);
+        String csv = ResultsExport.csv(List.of(again, first, unknown), h -> true);
+        String[] lines = csv.split("\n");
+        assertTrue(lines[1].endsWith(",\"Infostealer +10, DB records -1\""), lines[1]);
+        assertTrue(lines[2].endsWith(",new"), lines[2]);
+        assertTrue(lines[3].endsWith(","), lines[3]);
+
+        JsonArray hosts = JsonParser.parseString(ResultsExport.json("example.com", List.of(again, first, unknown), h -> true, null,
+                "0.1.0", AT)).getAsJsonObject().getAsJsonArray("hosts");
+        JsonObject p = hosts.get(0).getAsJsonObject().getAsJsonObject("previous");
+        assertEquals(2, p.get("stealer").getAsInt());
+        assertEquals(3, p.get("work_accounts").getAsInt());
+        assertEquals(1, p.get("personal_accounts").getAsInt());
+        assertEquals(41, p.get("db_records").getAsLong());
+        assertEquals("2026-11-17T19:00:00Z", p.get("checked_at").getAsString());
+        assertTrue(hosts.get(1).getAsJsonObject().getAsJsonObject("previous").get("checked_at").isJsonNull());
+        assertTrue(hosts.get(2).getAsJsonObject().get("previous").isJsonNull());
     }
 }

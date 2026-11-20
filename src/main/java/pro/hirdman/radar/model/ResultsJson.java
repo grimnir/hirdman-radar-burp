@@ -41,9 +41,16 @@ public final class ResultsJson {
     private record SavedLogin(String kind, String label, String path) {
     }
 
-    /** {@code replayed} is written only when true; rows saved before it load as false. */
+    private record SavedPrevious(int stealer, int work, int personal, long dbRecords, String checkedAt) {
+    }
+
+    /**
+     * {@code replayed} is written only when true; rows saved before it load as false. {@code previous} is left out when
+     * unknown; older plugins skip it, rows saved before it load without it.
+     */
     private record Row(String host, String domain, String status, int stealer, int work, int personal, long dbRecords,
-            List<SavedFinding> findings, String checkedAt, List<BreachSource> sources, SavedLogin login, Boolean replayed) {
+            List<SavedFinding> findings, String checkedAt, List<BreachSource> sources, SavedLogin login, Boolean replayed,
+            SavedPrevious previous) {
     }
 
     private record Saved(int v, List<String> texts, List<Row> hosts) {
@@ -66,9 +73,19 @@ public final class ResultsJson {
             hosts.add(new Row(r.host(), r.domain(), r.status().name(), r.stealer(), r.work(), r.personal(), r.dbRecords(),
                     findings, r.checkedAt() == null ? null : r.checkedAt().toString(), r.sources(),
                     r.login() == null ? null : new SavedLogin(r.login().kind().name(), r.login().label(), r.login().path()),
-                    r.replayed() ? Boolean.TRUE : null));
+                    r.replayed() ? Boolean.TRUE : null, saved(r.previous())));
         }
         return Json.GSON.toJson(new Saved(VERSION, List.copyOf(texts.keySet()), hosts));
+    }
+
+    private static SavedPrevious saved(HostResult.Previous p) {
+        return p == null ? null : new SavedPrevious(p.stealer(), p.work(), p.personal(), p.dbRecords(),
+                p.checkedAt() == null ? null : p.checkedAt().toString());
+    }
+
+    private static HostResult.Previous restored(SavedPrevious p) {
+        return p == null ? null
+                : new HostResult.Previous(p.stealer(), p.work(), p.personal(), p.dbRecords(), instant(p.checkedAt()));
     }
 
     private static JsonElement number(Map<String, Integer> texts, String text) {
@@ -176,10 +193,12 @@ public final class ResultsJson {
         }
         LoginPage login = r.login() == null ? null
                 : LoginPage.restore(r.login().kind(), r.login().label(), r.login().path()).orElse(null);
+        // A host never checked has nothing to compare with.
+        HostResult.Previous previous = status.get() == HostStatus.FOUND ? null : restored(r.previous());
         // Rows without a successful check carry no numbers, whatever the file says.
         if (status.get() == HostStatus.FOUND || status.get() == HostStatus.NOT_CHECKED) {
             return Optional.of(HostResult.withoutCounts(host.get(), domain.get(), status.get(), instant(r.checkedAt()))
-                    .withLogin(login));
+                    .withLogin(login).withPrevious(previous));
         }
         List<Finding> findings = r.findings() == null ? List.of() : r.findings().stream().filter(Objects::nonNull)
                 .map(f -> new Finding(f.kind(), f.severity(), f.confidence(), f.name(), f.detail(),
@@ -187,7 +206,7 @@ public final class ResultsJson {
                 .toList();
         return Optional.of(new HostResult(host.get(), domain.get(), status.get(), Math.max(0, r.stealer()),
                 Math.max(0, r.work()), Math.max(0, r.personal()), Math.max(0, r.dbRecords()), findings, instant(r.checkedAt()),
-                r.sources(), login, Boolean.TRUE.equals(r.replayed())));
+                r.sources(), login, Boolean.TRUE.equals(r.replayed()), previous));
     }
 
     /** A version or a text number: plain digits only, so exponents, fractions and huge values give -1. */

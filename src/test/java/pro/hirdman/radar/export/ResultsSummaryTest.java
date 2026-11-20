@@ -1,6 +1,8 @@
 package pro.hirdman.radar.export;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
 import java.util.List;
@@ -8,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import pro.hirdman.radar.api.ServerEvent.BreachSource;
 import pro.hirdman.radar.api.ServerEvent.Finding;
 import pro.hirdman.radar.model.HostResult;
+import pro.hirdman.radar.model.HostResult.Previous;
 import pro.hirdman.radar.model.HostStatus;
 
 class ResultsSummaryTest {
@@ -65,5 +68,38 @@ class ResultsSummaryTest {
                 HIRDMAN review. A full review shows which accounts and devices are affected and whether the passwords still \
                 work.
                 """, ResultsSummary.markdown("example.com", clean, null, NOW));
+    }
+
+    @Test
+    void aRecheckListsTheChangesSinceThePreviousCheck() {
+        Instant before = NOW.minusSeconds(86_400);
+        List<HostResult> rechecked = List.of(
+                checked("vpn.example.com", "high", 15, 3, 40, 7, null).withPrevious(new Previous(3, 3, 41, 7, before)),
+                checked("mail.example.com", "medium", 0, 0, 5, 0, null).withPrevious(Previous.FIRST),
+                checked("same.example.com", "medium", 0, 0, 5, 0, null).withPrevious(new Previous(0, 0, 5, 0, before)),
+                new HostResult("dev.example.com", "example.com", HostStatus.CLEAN, 0, 0, 0, 0, List.of(), NOW)
+                        .withPrevious(Previous.FIRST));
+        String md = ResultsSummary.markdown("example.com", rechecked, null, NOW);
+        assertTrue(md.contains("""
+                Since the previous check:
+
+                - mail.example.com: new (first check)
+                - vpn.example.com: Infostealer +12, Host logins -1
+
+                Counts only:"""), md);
+    }
+
+    @Test
+    void aRecheckWithoutChangesSaysSo() {
+        List<HostResult> same = List.of(checked("vpn.example.com", "high", 3, 0, 0, 0, null)
+                .withPrevious(new Previous(3, 0, 0, 0, NOW.minusSeconds(60))));
+        assertTrue(ResultsSummary.markdown("example.com", same, null, NOW).contains("\n\nSince the previous check: no changes in the"
+                + " counts.\n\nCounts only:"), ResultsSummary.markdown("example.com", same, null, NOW));
+    }
+
+    @Test
+    void aFirstScanHasNoChangesSection() {
+        List<HostResult> first = List.of(checked("vpn.example.com", "high", 3, 0, 0, 0, null).withPrevious(Previous.FIRST));
+        assertFalse(ResultsSummary.markdown("example.com", first, null, NOW).contains("Since the previous check"));
     }
 }

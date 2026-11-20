@@ -24,6 +24,25 @@ public final class ResultsSummary {
     private ResultsSummary() {
     }
 
+    /** What changed since the previous check, only when some host was checked before: a first scan is all new. */
+    private static void changes(StringBuilder b, List<HostResult> rows) {
+        if (rows.stream().noneMatch(r -> r.checked() && r.previous() != null && !r.previous().first())) {
+            return;
+        }
+        List<HostResult> changed = rows.stream().filter(r -> !r.changeText().isEmpty())
+                .sorted(Comparator.comparing(HostResult::host)).toList();
+        if (changed.isEmpty()) {
+            b.append("Since the previous check: no changes in the counts.\n\n");
+            return;
+        }
+        b.append("Since the previous check:\n\n");
+        for (HostResult r : changed) {
+            b.append("- ").append(r.host()).append(": ").append(r.previous().first() ? "new (first check)" : r.changeText())
+                    .append('\n');
+        }
+        b.append('\n');
+    }
+
     /** Host names are checked names and the cells are numbers and dates, so nothing needs Markdown escaping. */
     public static String markdown(String domain, List<HostResult> rows, String site, Instant now) {
         long notCheckedYet = rows.stream().filter(r -> r.status() == HostStatus.FOUND).count();
@@ -44,6 +63,7 @@ public final class ResultsSummary {
             }
             b.append('\n').append(HOST_LOGINS).append("\n\n");
         }
+        changes(b, rows);
         b.append(NOTES).append('\n');
         IssuePlanner.siteUrl(domain, site).ifPresent(url ->
                 b.append("\nLatest scan of ").append(domain).append(" and its subdomains: ").append(url).append('\n'));

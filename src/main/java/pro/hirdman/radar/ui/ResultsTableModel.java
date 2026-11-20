@@ -29,12 +29,13 @@ public final class ResultsTableModel extends AbstractTableModel {
     static final int WORK = 4;
     static final int PERSONAL = 5;
     static final int DB = 6;
-    static final int LATEST = 7;
-    static final int LOGIN = 8;
-    static final int STATUS = 9;
+    static final int CHANGE = 7;
+    static final int LATEST = 8;
+    static final int LOGIN = 9;
+    static final int STATUS = 10;
     private static final DateTimeFormatter AT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC);
     private static final List<String> COLUMNS = List.of("Host", "Risk", "Scope", "Infostealer", "Work", "Host logins", "DB records",
-            "Latest breach", "Login page", "Status");
+            "Change", "Latest breach", "Login page", "Status");
     private static final Comparator<Row> ORDER = Comparator.comparing((Row r) -> r.result().risk()).reversed()
             .thenComparing(r -> r.result().host());
 
@@ -150,7 +151,7 @@ public final class ResultsTableModel extends AbstractTableModel {
     public Class<?> getColumnClass(int column) {
         return switch (column) {
             case RISK -> Risk.class;
-            case HOST, SCOPE, LATEST, LOGIN, STATUS -> String.class;
+            case HOST, SCOPE, CHANGE, LATEST, LOGIN, STATUS -> String.class;
             default -> Object.class;
         };
     }
@@ -169,6 +170,7 @@ public final class ResultsTableModel extends AbstractTableModel {
             case WORK -> counted ? h.work() : "";
             case PERSONAL -> counted ? h.personal() : "";
             case DB -> counted ? h.dbRecords() : "";
+            case CHANGE -> h.changeText();
             case LATEST -> Objects.toString(h.latestBreach(), "");
             case LOGIN -> h.login() == null ? "" : h.login().label();
             case STATUS -> h.status().label();
@@ -201,6 +203,20 @@ public final class ResultsTableModel extends AbstractTableModel {
             return null;
         }
         return (h.status() == HostStatus.NOT_CHECKED ? "Last tried " : "Checked ") + AT.format(h.checkedAt()) + " UTC";
+    }
+
+    /** The previous check's counts for the Change cell's tooltip; null when there is nothing to compare. */
+    public String previousText(int row) {
+        HostResult h = rows.get(row).result();
+        HostResult.Previous p = h.previous();
+        if (!h.checked() || p == null) {
+            return null;
+        }
+        if (p.first()) {
+            return "First check of this host.";
+        }
+        return "Previous check " + AT.format(p.checkedAt()) + " UTC: Infostealer " + p.stealer() + ", Work " + p.work()
+                + ", Host logins " + p.personal() + ", DB records " + p.dbRecords() + ".";
     }
 
     /**

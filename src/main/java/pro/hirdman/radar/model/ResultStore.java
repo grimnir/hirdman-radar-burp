@@ -108,13 +108,27 @@ public final class ResultStore {
         synchronized (this) {
             HostResult old = rows.get(h.get());
             String d = old != null ? old.domain() : HostNames.normalize(domain).orElse(ParentDomains.base(h.get()));
-            HostResult fresh = row(h.get(), d, e, now);
+            HostResult fresh = row(h.get(), d, e, now).withPrevious(previous(old, e.checkedAt(now)));
             row = old == null || old.login() == null ? fresh : fresh.withLogin(old.login());
             store(row);
         }
         fire(Set.of(row.domain()));
         checkListeners.forEach(l -> l.accept(row));
         return Optional.of(row);
+    }
+
+    /**
+     * The counts a check is compared with: the old row's when it was counted, else what that row compared with. A replay of
+     * the check already shown keeps its comparison; a host never checked before is a first check.
+     */
+    private static HostResult.Previous previous(HostResult old, Instant checkedAt) {
+        if (old == null || old.status() == HostStatus.FOUND) {
+            return HostResult.Previous.FIRST;
+        }
+        if (old.checked() && !checkedAt.equals(old.checkedAt())) {
+            return HostResult.Previous.of(old);
+        }
+        return old.previous();
     }
 
     private static HostResult row(String host, String domain, Check e, Instant now) {
@@ -132,6 +146,62 @@ public final class ResultStore {
     private static long sum(long a, long b) {
         long s = Math.max(0, a) + Math.max(0, b);
         return s < 0 ? Long.MAX_VALUE : s;
+    }
+
+    /**
+     * An import: {@code added} hosts the project did not have, {@code updated} rows replaced by a newer check, {@code kept}
+     * rows whose check in the project is as new or newer, {@code full} hosts left out at the project's row limit.
+     */
+    public record Merged(int added, int updated, int kept, int full) {
+    }
+
+    /**
+     * Adds imported rows, already checked by the caller: per host the newer check wins, a tie keeps the project's row, and
+     * the project's login page stays when it says more. Change listeners hear once; check listeners do not, as nothing was
+     * checked.
+     */
+    public Merged merge(Collection<HostResult> imported) {
+        return merge(imported, ResultsJson.MAX_ROWS);
+    }
+
+    Merged merge(Collection<HostResult> imported, int maxRows) {
+        int added = 0;
+        int updated = 0;
+        int kept = 0;
+        int full = 0;
+        Set<String> domains = new LinkedHashSet<>();
+        synchronized (this) {
+            for (HostResult row : imported) {
+                HostResult old = rows.get(row.host());
+                if (old == null) {
+                    if (rows.size() >= maxRows) {
+                        full++;
+                        continue;
+                    }
+                    added++;
+                } else {
+                    if (!newer(row, old)) {
+                        kept++;
+                        continue;
+                    }
+                    if (old.login() != null && old.login().betterThan(row.login())) {
+                        row = row.withLogin(old.login());
+                    }
+                    updated++;
+                    domains.add(old.domain());
+                }
+                store(row);
+                domains.add(row.domain());
+            }
+        }
+        if (!domains.isEmpty()) {
+            fire(Set.copyOf(domains));
+        }
+        return new Merged(added, updated, kept, full);
+    }
+
+    private static boolean newer(HostResult row, HostResult old) {
+        return row.checkedAt() != null && (old.checkedAt() == null || row.checkedAt().isAfter(old.checkedAt()));
     }
 
     public void remove(Collection<String> hosts) {

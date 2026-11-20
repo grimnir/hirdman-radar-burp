@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -23,24 +24,34 @@ import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingUtilities;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import pro.hirdman.radar.Version;
 import pro.hirdman.radar.config.Options;
 import pro.hirdman.radar.export.ResultsExport;
+import pro.hirdman.radar.export.ResultsImport;
 import pro.hirdman.radar.export.ResultsSummary;
 import pro.hirdman.radar.jobs.StatusText;
 import pro.hirdman.radar.model.HostResult;
 import pro.hirdman.radar.model.ResultStore;
 
-/** The Export button and its menu: the rows shown as JSON or CSV, the whole domain as a Markdown summary. */
+/**
+ * The Export button and its menu: the rows shown as JSON or CSV, the whole domain as a Markdown summary, and an import of a
+ * JSON export (offline review, sharing in a team) that sends nothing anywhere.
+ */
 final class ExportActions {
 
     static final String EXPORT_FAILED = "Could not save the export. Details are in the extension's Errors tab.";
+    static final String IMPORT_ONLY = " Only a JSON export of Hirdman Radar can be imported.";
 
     /** The arrow says the button opens a menu. */
     final JButton button = new JButton("Export \u25BE");
     final JPopupMenu menu = new JPopupMenu();
     /** Asks where to save the export; tests replace it. */
     Function<String, Optional<Path>> saveDialog = this::chooseFile;
+    /** Asks which export to import; tests replace it. */
+    Supplier<Optional<Path>> openDialog = this::chooseImport;
+    /** A larger file is not read; tests lower it. */
+    long maxImportBytes = ResultsImport.MAX_CHARS;
 
     private final ResultsTableModel model;
     private final ResultStore store;
@@ -84,6 +95,10 @@ final class ExportActions {
         menu.add(csv);
         menu.addSeparator();
         menu.add(summary);
+        JMenuItem importJson = new JMenuItem("Import JSON...");
+        importJson.addActionListener(e -> importJson());
+        menu.addSeparator();
+        menu.add(importJson);
         button.setMnemonic(KeyEvent.VK_E);
         button.addActionListener(e -> menu.show(button, 0, button.getHeight()));
     }
@@ -122,6 +137,70 @@ final class ExportActions {
         if (domain != null) {
             clipboard.accept(ResultsSummary.markdown(domain, store.domain(domain), options.get().issueOptions().site(), Instant.now()));
         }
+    }
+
+    /** Reads the chosen export in the background and merges it; the file is checked whole before any row is added. */
+    private void importJson() {
+        openDialog.get().ifPresent(p -> background.execute(() -> read(p)));
+    }
+
+    private void read(Path path) {
+        String name = String.valueOf(path.getFileName());
+        String json;
+        try {
+            if (Files.size(path) > maxImportBytes) {
+                refuse(path, name, "the file is too large");
+                return;
+            }
+            json = Files.readString(path, StandardCharsets.UTF_8);
+        } catch (IOException | RuntimeException e) {
+            log.error("Hirdman Radar: import of " + path + " failed: " + e);
+            SwingUtilities.invokeLater(() -> message.accept("Could not read " + name + ". Details are in the extension's Errors tab."));
+            return;
+        }
+        List<HostResult> rows;
+        try {
+            rows = ResultsImport.parse(json, Instant.now());
+        } catch (ResultsImport.Refused e) {
+            refuse(path, name, e.getMessage());
+            return;
+        }
+        ResultStore.Merged m = store.merge(rows);
+        log.info("Hirdman Radar: imported " + StatusText.count(rows.size(), "host") + " from " + path + ": " + m.added() + " new, "
+                + m.updated() + " updated, " + m.kept() + " kept" + (m.full() > 0 ? ", " + m.full() + " left out" : ""));
+        SwingUtilities.invokeLater(() -> message.accept(importedText(name, m)));
+    }
+
+    private void refuse(Path path, String name, String why) {
+        log.error("Hirdman Radar: import of " + path + " refused: " + why);
+        SwingUtilities.invokeLater(() -> message.accept("Could not import " + name + ": " + why + "." + IMPORT_ONLY));
+    }
+
+    static String importedText(String name, ResultStore.Merged m) {
+        List<String> parts = new ArrayList<>();
+        if (m.added() > 0) {
+            parts.add(StatusText.count(m.added(), "new host"));
+        }
+        if (m.updated() > 0) {
+            parts.add(m.updated() + " updated with a newer check");
+        }
+        if (m.kept() > 0) {
+            parts.add(m.kept() + " kept (the project's check is as new or newer)");
+        }
+        if (m.full() > 0) {
+            parts.add(m.full() + " left out (the project holds as many hosts as it can)");
+        }
+        return "Imported " + name + ": " + (parts.isEmpty() ? "no hosts" : String.join(", ", parts))
+                + ". Nothing was sent to the radar server.";
+    }
+
+    private Optional<Path> chooseImport() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Import results");
+        chooser.setFileFilter(new FileNameExtensionFilter("Hirdman Radar JSON export", "json"));
+        theme.accept(chooser);
+        return chooser.showOpenDialog(parent.get()) == JFileChooser.APPROVE_OPTION ? Optional.of(chooser.getSelectedFile().toPath())
+                : Optional.empty();
     }
 
     /** A save dialog that adds the extension and asks before replacing a file. */

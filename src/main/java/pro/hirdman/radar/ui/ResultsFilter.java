@@ -8,6 +8,7 @@ public enum ResultsFilter {
     ALL("All"),
     WITH_LEAKS("With leaks"),
     LOGIN_WITH_LEAKS("Login page + leaks"),
+    NEW_SINCE_LAST_CHECK("New since last check"),
     NOT_CHECKED_YET("Not checked yet"),
     FAILED("Check failed"),
     IN_SCOPE("In scope");
@@ -23,6 +24,7 @@ public enum ResultsFilter {
             case ALL -> true;
             case WITH_LEAKS -> r.hasLeaks();
             case LOGIN_WITH_LEAKS -> r.login() != null && r.hasLeaks();
+            case NEW_SINCE_LAST_CHECK -> r.newSinceLastCheck();
             case NOT_CHECKED_YET -> r.status() == HostStatus.FOUND;
             case FAILED -> r.status() == HostStatus.NOT_CHECKED;
             case IN_SCOPE -> inScope;
