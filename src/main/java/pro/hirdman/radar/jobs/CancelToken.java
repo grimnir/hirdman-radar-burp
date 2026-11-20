@@ -3,13 +3,18 @@ package pro.hirdman.radar.jobs;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import pro.hirdman.radar.api.Radar;
 
-/** Cancellation of one run of a job, and the id of the last server job that run started. */
+/** Cancellation of one run of a job, and the live server job that run started. */
 public final class CancelToken {
+
+    /** A server job and the client of the server it was created on, so a delete goes there even after a URL change. */
+    public record ServerJob(Radar radar, String id) {
+    }
 
     private final AtomicBoolean cancelled = new AtomicBoolean();
     private final List<Runnable> hooks = new CopyOnWriteArrayList<>();
-    private volatile String serverJobId;
+    private volatile ServerJob serverJob;
 
     public void cancel() {
         if (cancelled.compareAndSet(false, true)) {
@@ -29,11 +34,12 @@ public final class CancelToken {
         }
     }
 
-    public String serverJobId() {
-        return serverJobId;
+    /** The server job still running for this run, or null. */
+    public ServerJob serverJob() {
+        return serverJob;
     }
 
-    void serverJobId(String id) {
-        serverJobId = id;
+    void serverJob(ServerJob job) {
+        serverJob = job;
     }
 }

@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
@@ -47,13 +48,24 @@ class JobRunnerTest {
     final List<String> errors = new CopyOnWriteArrayList<>();
     final List<String> statuses = new CopyOnWriteArrayList<>();
     JobRunner.RunOptions options = new JobRunner.RunOptions(URI.create("https://scan.hirdman.pro"), null, false, 5, true);
+    final AtomicLong clock = new AtomicLong();
 
     JobRunner runner() {
         return runner(() -> radar);
     }
 
     JobRunner runner(Supplier<Radar> r) {
-        return new JobRunner(r, store, gate, (d, job) -> pauses.add(d), () -> options, events::add, errors::add, () -> 0.5);
+        return runner(r, (d, job) -> pauses.add(d), () -> options);
+    }
+
+    /** Requests run on the test thread; the clock moves only by the pauses. */
+    JobRunner runner(Supplier<Radar> r, Sleeper sleeper, Supplier<JobRunner.RunOptions> o) {
+        Sleeper ticking = (d, job) -> {
+            clock.addAndGet(d.toNanos());
+            sleeper.sleep(d, job);
+        };
+        return new JobRunner(server -> r.get(), store, gate, ticking, o, events::add, errors::add, () -> 0.5, clock::get,
+                Runnable::run);
     }
 
     Job job(JobKind kind, String domain, List<String> hosts, boolean rescan) {
@@ -87,9 +99,9 @@ class JobRunnerTest {
 
     @Test
     void settingsThatCannotBeReadFailTheJobInsteadOfTheWorker() {
-        JobRunner r = new JobRunner(() -> radar, store, gate, (d, job) -> pauses.add(d), () -> {
+        JobRunner r = runner(() -> radar, (d, job) -> pauses.add(d), () -> {
             throw new IllegalStateException("settings gone");
-        }, events::add, errors::add, () -> 0.5);
+        });
         Job j = domainJob();
         assertEquals(List.of(), r.run(j, j.token()));
         assertEquals(JobState.FAILED, j.state());
@@ -864,9 +876,8 @@ class JobRunnerTest {
         radar.polls.add(page(3, false, started()));
         radar.polls.add(page(4, true, done(0, 0)));
         // The pause between polls is where the user ticks the switch.
-        JobRunner r = new JobRunner(() -> radar, store, gate, (d, job) -> options = new JobRunner.RunOptions(
-                URI.create("https://scan.hirdman.pro"), null, false, 5, true, true), () -> options, events::add,
-                errors::add, () -> 0.5);
+        JobRunner r = runner(() -> radar, (d, job) -> options = new JobRunner.RunOptions(
+                URI.create("https://scan.hirdman.pro"), null, false, 5, true, true), () -> options);
         Job j = domainJob();
         r.run(j, j.token());
         assertEquals(JobState.FAILED, j.state());
@@ -942,5 +953,269 @@ class JobRunnerTest {
         radar.polls.add(page(1, true, check("new.example.com", true), done(1, 0)));
         run(domainJob());
         assertEquals(List.of(JobRequest.ofHosts(List.of("new.example.com"))), radar.started);
+    }
+
+    // Polls of a live server job.
+
+    @Test
+    void aPollWaitsAtMostFortyFiveSeconds() {
+        radar.polls.add(page(3, false, started()));
+        radar.polls.add(http(503, "", "Retry-After", "900"));
+        radar.polls.add(page(4, true, rootCheck("example.com"), done(0, 0)));
+        Job j = domainJob();
+        run(j);
+        assertEquals(List.of(JobRunner.POLL_PAUSE, Duration.ofSeconds(45)), pauses);
+        assertEquals(JobState.DONE, j.state(), j.status());
+    }
+
+    static ApiException malformed() {
+        return ApiException.malformed("answer is not a JSON object", null);
+    }
+
+    @Test
+    void aMalformedPollIsPolledAgainWithTheSameCursor() {
+        radar.polls.add(page(3, false, started()));
+        radar.polls.add(malformed());
+        radar.polls.add(page(4, true, rootCheck("example.com"), done(0, 0)));
+        Job j = domainJob();
+        run(j);
+        assertEquals(List.of(0, 3, 3), radar.pollAfters);
+        assertEquals(JobState.DONE, j.state(), j.status());
+        assertTrue(statuses.contains("Unexpected answer from the server. Retrying in 2 s, attempt 1 of 3."), statuses.toString());
+    }
+
+    @Test
+    void threeMalformedPollsFailAndFreeTheServerSlot() {
+        for (int i = 0; i < 3; i++) {
+            radar.polls.add(malformed());
+        }
+        Job j = domainJob();
+        run(j);
+        assertEquals(3, radar.pollAfters.size());
+        assertEquals("Failed: Unexpected answer from the server", j.status());
+        assertEquals(List.of("j1"), radar.deleted);
+    }
+
+    @Test
+    void aMalformedStartStillFailsAtOnce() {
+        radar.starts.add(malformed());
+        Job j = domainJob();
+        run(j);
+        assertEquals("Failed: Unexpected answer from the server", j.status());
+        assertEquals(1, radar.started.size());
+        assertEquals(List.of(), radar.deleted);
+    }
+
+    @Test
+    void aFailedPollDeletesTheServerJob() {
+        for (int i = 0; i < 5; i++) {
+            radar.polls.add(unreachable());
+        }
+        Job j = domainJob();
+        run(j);
+        assertEquals(List.of("j1"), radar.deleted);
+        assertEquals(null, j.token().serverJob());
+    }
+
+    @Test
+    void aJobTheServerEndedIsNotDeleted() {
+        radar.polls.add(page(3, true, check("x.example.com", false), error("scan cancelled"), done(1, 1)));
+        Job j = domainJob();
+        run(j);
+        assertEquals(JobState.FAILED, j.state());
+        assertEquals(List.of(), radar.deleted);
+        assertEquals(null, j.token().serverJob());
+    }
+
+    @Test
+    void aPrivateProjectDeletesNothingOnFailure() {
+        radar.polls.add(page(3, false, started()));
+        JobRunner r = runner(() -> radar, (d, job) -> options = new JobRunner.RunOptions(
+                URI.create("https://scan.hirdman.pro"), null, false, 5, true, true), () -> options);
+        Job j = domainJob();
+        r.run(j, j.token());
+        assertEquals(OFF_MID_JOB, j.status());
+        assertEquals(List.of(), radar.deleted);
+    }
+
+    // The client comes from the same settings snapshot as the run.
+
+    @Test
+    void theClientIsMadeForTheServerOfTheRun() {
+        List<URI> asked = new CopyOnWriteArrayList<>();
+        radar.polls.add(page(2, true, rootCheck("example.com"), done(0, 0)));
+        JobRunner r = new JobRunner(server -> {
+            asked.add(server);
+            return radar;
+        }, store, gate, (d, job) -> { }, () -> options, events::add, errors::add, () -> 0.5, clock::get, Runnable::run);
+        Job j = domainJob();
+        r.run(j, j.token());
+        assertEquals(List.of(URI.create("https://scan.hirdman.pro")), asked);
+        assertEquals(JobState.DONE, j.state());
+    }
+
+    @Test
+    void theServerJobIsKeptWithItsClientWhileItRuns() {
+        java.util.concurrent.atomic.AtomicReference<CancelToken.ServerJob> live = new java.util.concurrent.atomic.AtomicReference<>();
+        Job j = domainJob();
+        radar.polls.add(page(1, false, started()));
+        radar.polls.add(page(2, true, rootCheck("example.com"), done(0, 0)));
+        runner(() -> radar, (d, job) -> live.set(j.token().serverJob()), () -> options).run(j, j.token());
+        assertEquals(new CancelToken.ServerJob(radar, "j1"), live.get());
+        assertEquals(null, j.token().serverJob(), "an ended server job needs no delete");
+    }
+
+    @Test
+    void noClientForTheServerFailsInsteadOfThrowing() {
+        Job j = domainJob();
+        runner(() -> null).run(j, j.token());
+        assertEquals("Failed: Server URL in Settings > Extensions > Hirdman Radar is not valid.", j.status());
+        assertTrue(errors.isEmpty(), errors.toString());
+    }
+
+    // Limits against a server that floods the project.
+
+    @Test
+    void aDomainJobTakesAtMostAThousandRows() {
+        List<String> many = hosts(0, JobRunner.MAX_ROWS + 1);
+        radar.polls.add(page(2000, false, checks(many)));
+        Job j = domainJob();
+        run(j);
+        assertEquals("Failed: Unexpected answer from the server", j.status());
+        assertEquals(JobRunner.MAX_ROWS, store.all().size());
+        assertEquals(List.of("j1"), radar.deleted);
+        assertTrue(errors.contains("Hirdman Radar: example.com: the server sent checks of more than 1000 hosts"), errors.toString());
+    }
+
+    @Test
+    void aHostJobMayHaveMoreRowsThanTheLimitIfItAskedForThem() {
+        List<String> many = hosts(0, JobRunner.MAX_ROWS + 50);
+        radar.metas.add(new Meta(1, null, "key", new Meta.Limits(400, 3, 0), null));
+        for (int i = 0; i < many.size(); i += 400) {
+            List<String> part = many.subList(i, Math.min(i + 400, many.size()));
+            radar.polls.add(page(part.size() + 1, true, plus(checks(part), done(part.size(), 0))));
+        }
+        Job j = job(JobKind.CHECK_HOSTS, null, many, false);
+        run(j);
+        assertEquals(JobState.DONE, j.state(), j.status());
+        assertEquals(many.size(), store.all().size());
+    }
+
+    @Test
+    void aServerJobEndsAfterTwoHours() {
+        // Each pause moves the clock; a server that never says done is stopped.
+        JobRunner r = runner(() -> radar, (d, job) -> clock.addAndGet(Duration.ofMinutes(30).toNanos()), () -> options);
+        for (int i = 0; i < 10; i++) {
+            radar.polls.add(page(i + 1, false, ev("progress", "{\"checked\":1,\"total\":2}")));
+        }
+        Job j = domainJob();
+        r.run(j, j.token());
+        assertEquals("Failed: Unexpected answer from the server", j.status());
+        assertEquals(5, radar.pollAfters.size());
+        assertTrue(errors.contains("Hirdman Radar: example.com: the server job ran over 2 hours"), errors.toString());
+    }
+
+    @Test
+    void tooManyEmptyPagesInARowEndTheJob() {
+        for (int i = 0; i < JobRunner.MAX_EMPTY_PAGES; i++) {
+            radar.polls.add(page(0, false));
+        }
+        Job j = domainJob();
+        run(j);
+        assertEquals("Failed: Unexpected answer from the server", j.status());
+        assertEquals(JobRunner.MAX_EMPTY_PAGES, radar.pollAfters.size());
+    }
+
+    @Test
+    void anEventResetsTheEmptyPageCount() {
+        for (int i = 0; i < JobRunner.MAX_EMPTY_PAGES - 1; i++) {
+            radar.polls.add(page(0, false));
+        }
+        radar.polls.add(page(1, false, started()));
+        for (int i = 0; i < JobRunner.MAX_EMPTY_PAGES - 1; i++) {
+            radar.polls.add(page(1, false));
+        }
+        radar.polls.add(page(2, true, rootCheck("example.com"), done(0, 0)));
+        Job j = domainJob();
+        run(j);
+        assertEquals(JobState.DONE, j.state(), j.status());
+    }
+
+    // A cancel does not wait for the answer of the request in flight.
+
+    @Test
+    void aCancelEndsTheWaitForAHangingPoll() throws Exception {
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        radar.polls.add(new FakeRadar.Hang(release, page(1, true, rootCheck("example.com"), done(0, 0))));
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newCachedThreadPool();
+        JobRunner r = new JobRunner(server -> radar, store, gate, (d, job) -> { }, () -> options, events::add, errors::add,
+                () -> 0.5, clock::get, pool);
+        Job j = domainJob();
+        Thread worker = new Thread(() -> r.run(j, j.token()));
+        worker.start();
+        JobQueueTest.waitUntil(() -> radar.calls.contains("poll j1 0"));
+        long t = System.nanoTime();
+        j.markCancelled(false);
+        worker.join(5000);
+        assertTrue(System.nanoTime() - t < Duration.ofSeconds(1).toNanos());
+        JobQueueTest.waitUntil(() -> radar.calls.contains("interrupted"));
+        release.countDown();
+        r.close();
+        assertTrue(store.all().isEmpty());
+    }
+
+    @Test
+    void aStartLeftBehindByACancelIsDeletedWhenItsIdComes() throws Exception {
+        java.util.concurrent.CountDownLatch inStart = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch answer = new java.util.concurrent.CountDownLatch(1);
+        Radar slowStart = new Radar() {
+            @Override
+            public Meta meta() throws ApiException {
+                return radar.meta();
+            }
+
+            @Override
+            public SubdomainList subdomains(String domain, boolean rescan) throws ApiException {
+                return radar.subdomains(domain, rescan);
+            }
+
+            @Override
+            public String startJob(JobRequest request) {
+                inStart.countDown();
+                // Burp's client does not stop on an interrupt: the answer still comes.
+                while (true) {
+                    try {
+                        answer.await();
+                        return "j9";
+                    } catch (InterruptedException e) {
+                        // Keep waiting, as a request that ignores interrupts does.
+                    }
+                }
+            }
+
+            @Override
+            public JobPage poll(String jobId, int after) throws ApiException {
+                return radar.poll(jobId, after);
+            }
+
+            @Override
+            public void deleteJob(String jobId, Duration timeout) {
+                radar.deleteJob(jobId, timeout);
+            }
+        };
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newCachedThreadPool();
+        JobRunner r = new JobRunner(server -> slowStart, store, gate, (d, job) -> { }, () -> options, events::add,
+                errors::add, () -> 0.5, clock::get, pool);
+        Job j = domainJob();
+        Thread worker = new Thread(() -> r.run(j, j.token()));
+        worker.start();
+        assertTrue(inStart.await(5, java.util.concurrent.TimeUnit.SECONDS));
+        j.markCancelled(false);
+        worker.join(5000);
+        assertTrue(!worker.isAlive());
+        assertEquals(List.of(), radar.deleted);
+        answer.countDown();
+        JobQueueTest.waitUntil(() -> radar.deleted.contains("j9"));
+        r.close();
     }
 }

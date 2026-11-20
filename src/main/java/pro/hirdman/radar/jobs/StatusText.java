@@ -16,6 +16,11 @@ public final class StatusText {
         return "Waiting in plugin queue";
     }
 
+    /** A re-check waiting for its delay. */
+    public static String recheckIn(Duration d) {
+        return "Retry in " + span(d);
+    }
+
     public static String serverQueue(int position, int etaSec) {
         return "Server queue: #" + position + ", about " + span(etaSec);
     }

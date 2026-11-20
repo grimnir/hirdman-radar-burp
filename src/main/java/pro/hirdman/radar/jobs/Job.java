@@ -27,6 +27,8 @@ public final class Job {
     private volatile JobState state = JobState.WAITING;
     private volatile String status = StatusText.waiting();
     private volatile CancelToken token = newToken();
+    /** A waiting job the worker does not take yet: a re-check before its delay is up. */
+    private volatile boolean held;
     private boolean wakeRequested;
 
     Job(JobKind kind, String domain, List<String> hosts, boolean rescan, boolean recheck, Consumer<Job> onChange) {
@@ -133,6 +135,34 @@ public final class Job {
         return true;
     }
 
+    /** Keeps this waiting job from the worker until {@link #release}; the status says when it starts. */
+    void hold(String waitStatus) {
+        synchronized (this) {
+            held = true;
+            status = waitStatus;
+        }
+    }
+
+    boolean held() {
+        return held;
+    }
+
+    /** Lets a held job run; false if it was not held or has been cancelled meanwhile. */
+    boolean release() {
+        synchronized (this) {
+            if (!held) {
+                return false;
+            }
+            held = false;
+            if (state != JobState.WAITING) {
+                return false;
+            }
+            status = StatusText.waiting();
+        }
+        onChange.accept(this);
+        return true;
+    }
+
     /** Puts a failed job back to waiting with a fresh token; false if it had not failed. */
     boolean resetForRetry() {
         synchronized (this) {
@@ -150,6 +180,11 @@ public final class Job {
     synchronized void wake() {
         wakeRequested = true;
         notifyAll();
+    }
+
+    /** True while a wake waits to end the next pause; for tests. */
+    synchronized boolean wakePending() {
+        return wakeRequested;
     }
 
     synchronized void pause(Duration d) throws InterruptedException {

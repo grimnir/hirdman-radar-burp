@@ -12,11 +12,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.DoubleSupplier;
+import java.util.function.Function;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
+import pro.hirdman.radar.Threads;
 import pro.hirdman.radar.Version;
 import pro.hirdman.radar.api.ApiException;
 import pro.hirdman.radar.api.ConnectionSettings;
@@ -66,8 +79,17 @@ public final class JobRunner {
     static final String FOREIGN = "Hirdman Radar: the server answered for hosts this job did not ask about; they were ignored (";
     static final Duration RECHECK_DELAY = Duration.ofMinutes(2);
     private static final Duration DELETE_TIMEOUT = Duration.ofSeconds(10);
+    /** A failed run frees its server slot with a short best-effort delete. */
+    private static final Duration FAIL_DELETE_TIMEOUT = Duration.ofSeconds(5);
+    /** How often a worker waiting for an answer looks at the cancel flag. */
+    private static final Duration CANCEL_CHECK = Duration.ofMillis(100);
+    static final String UNEXPECTED = "Unexpected answer from the server";
+    /** Limits against a server that floods the project: rows per job, the life of a server job, silent pages. */
+    static final int MAX_ROWS = 1000;
+    static final Duration MAX_SERVER_JOB = Duration.ofHours(2);
+    static final int MAX_EMPTY_PAGES = 200;
 
-    private final Supplier<Radar> radar;
+    private final Function<URI, Radar> radar;
     private final ResultStore store;
     private final MetaGate gate;
     private final Sleeper sleeper;
@@ -75,14 +97,25 @@ public final class JobRunner {
     private final Consumer<String> events;
     private final Consumer<String> errors;
     private final DoubleSupplier random;
+    private final LongSupplier nanoTime;
+    /** Requests run here, so a cancel does not wait for an answer. */
+    private final Executor calls;
 
-    public JobRunner(Supplier<Radar> radar, ResultStore store, MetaGate gate, Sleeper sleeper,
+    /** {@code radar} makes the client for the server of the run's settings snapshot. */
+    public JobRunner(Function<URI, Radar> radar, ResultStore store, MetaGate gate, Sleeper sleeper,
             Supplier<RunOptions> options, Consumer<String> events, Consumer<String> errors) {
-        this(radar, store, gate, sleeper, options, events, errors, () -> ThreadLocalRandom.current().nextDouble());
+        this(radar, store, gate, sleeper, options, events, errors, () -> ThreadLocalRandom.current().nextDouble(),
+                System::nanoTime, Executors.newCachedThreadPool(Threads.daemon("hirdman-radar-http")));
     }
 
-    JobRunner(Supplier<Radar> radar, ResultStore store, MetaGate gate, Sleeper sleeper, Supplier<RunOptions> options,
-            Consumer<String> events, Consumer<String> errors, DoubleSupplier random) {
+    /** One client whatever the server; for callers that never send anything. */
+    public JobRunner(Supplier<Radar> radar, ResultStore store, MetaGate gate, Sleeper sleeper,
+            Supplier<RunOptions> options, Consumer<String> events, Consumer<String> errors) {
+        this(server -> radar.get(), store, gate, sleeper, options, events, errors);
+    }
+
+    JobRunner(Function<URI, Radar> radar, ResultStore store, MetaGate gate, Sleeper sleeper, Supplier<RunOptions> options,
+            Consumer<String> events, Consumer<String> errors, DoubleSupplier random, LongSupplier nanoTime, Executor calls) {
         this.radar = radar;
         this.store = store;
         this.gate = gate;
@@ -91,10 +124,15 @@ public final class JobRunner {
         this.events = events;
         this.errors = errors;
         this.random = random;
+        this.nanoTime = nanoTime;
+        this.calls = calls;
     }
 
-    Sleeper sleeper() {
-        return sleeper;
+    /** Extension unload: requests still waiting for an answer are interrupted. */
+    void close() {
+        if (calls instanceof ExecutorService service) {
+            service.shutdownNow();
+        }
     }
 
     /** Event log line for a job just put in the queue. */
@@ -199,7 +237,10 @@ public final class JobRunner {
                 throw fail(c, "Server URL in Settings > Extensions > Hirdman Radar is not valid."
                         + (c.o.serverProblem() == null ? "" : " " + c.o.serverProblem()));
             }
-            c.radar = radar.get();
+            c.radar = radar.apply(c.o.server());
+            if (c.radar == null) {
+                throw fail(c, "Server URL in Settings > Extensions > Hirdman Radar is not valid.");
+            }
             if (job.kind() == JobKind.CHECK_HOSTS) {
                 c.toCheck = job.force() ? job.hosts() : toSend(job.hosts());
                 c.skipped = job.hosts().size() - c.toCheck.size();
@@ -228,12 +269,23 @@ public final class JobRunner {
             Thread.currentThread().interrupt();
             return List.of();
         } catch (RuntimeException e) {
-            StringWriter trace = new StringWriter();
-            e.printStackTrace(new PrintWriter(trace));
-            error(c, "Hirdman Radar: unexpected error in " + subject(job) + ": " + trace);
-            fail(c, "Unexpected error. Details are in the extension's Errors tab.");
+            crashed(c, e);
             return List.of();
         }
+    }
+
+    static final String CRASHED = "Unexpected error. Details are in the extension's Errors tab.";
+
+    /** A run that threw: the trace goes to the Errors tab and the job fails. */
+    void crashed(Job job, Throwable t) {
+        crashed(new Run(job, job.token(), null), t);
+    }
+
+    private void crashed(Run c, Throwable t) {
+        StringWriter trace = new StringWriter();
+        t.printStackTrace(new PrintWriter(trace));
+        error(c, "Hirdman Radar: unexpected error in " + subject(c.job) + ": " + trace);
+        fail(c, CRASHED);
     }
 
     private Meta meta(Run c) throws Stop, InterruptedException {
@@ -283,9 +335,9 @@ public final class JobRunner {
     }
 
     /** Lists the subdomains a large scan left unchecked as "Not checked yet"; one try, a failure only logs. */
-    private boolean listRest(Run c, String domain) {
+    private boolean listRest(Run c, String domain) throws Stop, InterruptedException {
         try {
-            store.found(domain, under(domain, c.radar.subdomains(domain, false)));
+            store.found(domain, under(domain, send(c, r -> r.subdomains(domain, false), null)));
             return true;
         } catch (ApiException e) {
             event(c, "Hirdman Radar: subdomains of " + domain + " left unchecked by the scan could not be listed: "
@@ -405,19 +457,24 @@ public final class JobRunner {
     }
 
     private Outcome serverJob(Run c, JobRequest request) throws Stop, InterruptedException {
-        String id = call(c, r -> r.startJob(request));
-        c.token.serverJobId(id);
+        Radar server = c.radar;
+        // A start abandoned by a cancel may still create the job: it is deleted when its id comes.
+        String id = call(c, r -> r.startJob(request), false, late -> deleteLater(server, late, DELETE_TIMEOUT));
+        c.token.serverJob(new CancelToken.ServerJob(server, id));
         if (c.token.cancelled()) {
             // Cancelled while the job was being created, so the queue may have missed its id.
-            deleteQuietly(c.radar, id, DELETE_TIMEOUT);
+            deleteQuietly(server, id, DELETE_TIMEOUT);
             throw new Stop();
         }
+        long started = nanoTime.getAsLong();
         int after = 0;
+        int emptyPages = 0;
         String runError = null;
         boolean sawDone = false;
         while (true) {
             JobPage page = poll(c, id, after);
             if (page == null) {
+                c.token.serverJob(null);
                 return new Lost();
             }
             for (JobEvent e : page.events()) {
@@ -454,10 +511,18 @@ public final class JobRunner {
             running(c);
             after = Math.max(after, page.next());
             if (page.done()) {
+                c.token.serverJob(null);
                 if (!sawDone) {
                     return new Lost();
                 }
                 return runError != null ? new Errored(runError) : new Finished();
+            }
+            emptyPages = page.events().isEmpty() ? emptyPages + 1 : 0;
+            if (emptyPages >= MAX_EMPTY_PAGES) {
+                throw unexpected(c, "the server sent " + MAX_EMPTY_PAGES + " empty pages in a row");
+            }
+            if (nanoTime.getAsLong() - started > MAX_SERVER_JOB.toNanos()) {
+                throw unexpected(c, "the server job ran over " + MAX_SERVER_JOB.toHours() + " hours");
             }
             // Also after an empty page: the server holds one for up to 20 s, a broken one may answer at once.
             sleeper.sleep(POLL_PAUSE, c.job);
@@ -465,7 +530,7 @@ public final class JobRunner {
     }
 
     /** A check of a host this job did not ask about is dropped: it would become a row, issues and a site map item. */
-    private void accept(Run c, Check check) {
+    private void accept(Run c, Check check) throws Stop {
         Optional<String> host = HostNames.normalize(check.domain());
         if (host.isEmpty()) {
             return;
@@ -476,6 +541,10 @@ public final class JobRunner {
                 error(c, FOREIGN + host.get() + ")");
             }
             return;
+        }
+        // A host job may ask for more hosts than the limit; it never gets rows for others.
+        if (!c.rows.containsKey(host.get()) && c.rows.size() >= Math.max(MAX_ROWS, c.sent.size())) {
+            throw unexpected(c, "the server sent checks of more than " + MAX_ROWS + " hosts");
         }
         store.apply(c.job.domain(), check, Instant.now()).ifPresent(row -> c.rows.put(row.host(), row));
     }
@@ -502,47 +571,107 @@ public final class JobRunner {
 
     /** A poll page, or null when the server no longer knows the job (404). */
     private JobPage poll(Run c, String id, int after) throws Stop, InterruptedException {
-        return call(c, r -> r.poll(id, after), true);
+        return call(c, r -> r.poll(id, after), true, null);
     }
 
     private <T> T call(Run c, ApiCall<T> call) throws Stop, InterruptedException {
-        return call(c, call, false);
+        return call(c, call, false, null);
     }
 
-    /** Calls until an answer, retrying per the policy; {@code nullOn404} makes a 404 return null instead. */
-    private <T> T call(Run c, ApiCall<T> call, boolean nullOn404) throws Stop, InterruptedException {
+    /**
+     * Calls until an answer, retrying per the policy. {@code poll}: a 404 returns null, waits stay short and an
+     * unreadable answer is tried again. {@code lateAnswer} gets the answer of a call a cancel left behind.
+     */
+    private <T> T call(Run c, ApiCall<T> call, boolean poll, Consumer<T> lateAnswer) throws Stop, InterruptedException {
         while (true) {
             checkCancelled(c);
             checkPrivate(c);
             try {
-                T value = call.call(c.radar);
+                T value = send(c, call, lateAnswer);
                 // Any answer is progress: the 429 budget limits waiting without one, so a long check spans hours.
                 c.attempts = 0;
                 c.waitedOn429 = Duration.ZERO;
                 return value;
             } catch (ApiException e) {
                 checkCancelled(c);
-                if (nullOn404 && e.kind() == ApiException.Kind.HTTP && e.status() == 404) {
+                if (poll && e.kind() == ApiException.Kind.HTTP && e.status() == 404) {
                     return null;
                 }
-                retryOrFail(c, e);
+                retryOrFail(c, e, poll);
             }
         }
     }
 
-    private void retryOrFail(Run c, ApiException e) throws Stop, InterruptedException {
-        switch (RetryPolicy.decide(e, c.attempts, c.o.maxAttempts(), c.waitedOn429, c.o.server().getHost(), random)) {
+    /** Runs one call off the worker thread and waits for it; a cancel or an interrupt stops the wait at once. */
+    private <T> T send(Run c, ApiCall<T> call, Consumer<T> lateAnswer) throws ApiException, Stop, InterruptedException {
+        Radar r = c.radar;
+        AtomicBoolean abandoned = new AtomicBoolean();
+        FutureTask<T> task = new FutureTask<>(() -> {
+            T value = call.call(r);
+            if (abandoned.get() && lateAnswer != null) {
+                lateAnswer.accept(value);
+            }
+            return value;
+        });
+        calls.execute(task);
+        try {
+            while (true) {
+                try {
+                    return task.get(CANCEL_CHECK.toNanos(), TimeUnit.NANOSECONDS);
+                } catch (TimeoutException e) {
+                    if (c.token.cancelled()) {
+                        abandon(task, abandoned, lateAnswer);
+                        throw new Stop();
+                    }
+                }
+            }
+        } catch (InterruptedException e) {
+            abandon(task, abandoned, lateAnswer);
+            throw e;
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof ApiException a) {
+                throw a;
+            }
+            if (cause instanceof RuntimeException re) {
+                throw re;
+            }
+            if (cause instanceof Error err) {
+                throw err;
+            }
+            throw new IllegalStateException(cause);
+        }
+    }
+
+    /** Stops waiting for a call; an answer that has just come is still handed to {@code lateAnswer}. */
+    private static <T> void abandon(FutureTask<T> task, AtomicBoolean abandoned, Consumer<T> lateAnswer) {
+        abandoned.set(true);
+        if (task.cancel(true) || lateAnswer == null) {
+            return;
+        }
+        try {
+            lateAnswer.accept(task.get());
+        } catch (ExecutionException | CancellationException | InterruptedException e) {
+            // No answer to hand over; get() on a finished task never waits.
+        }
+    }
+
+    private void retryOrFail(Run c, ApiException e, boolean poll) throws Stop, InterruptedException {
+        int max = poll && e.kind() == ApiException.Kind.MALFORMED
+                ? Math.min(c.o.maxAttempts(), RetryPolicy.MALFORMED_POLL_ATTEMPTS)
+                : c.o.maxAttempts();
+        switch (RetryPolicy.decide(e, c.attempts, max, c.waitedOn429, c.o.server().getHost(), random, poll)) {
             case RetryPolicy.Fail f -> {
                 error(c, "Hirdman Radar: " + subject(c.job) + ": " + e.getMessage());
                 throw fail(c, f.reason());
             }
-            case RetryPolicy.Retry r -> waitToRetry(c, r);
+            case RetryPolicy.Retry r -> waitToRetry(c, r, max);
         }
     }
 
-    private void waitToRetry(Run c, RetryPolicy.Retry r) throws Stop, InterruptedException {
+    private void waitToRetry(Run c, RetryPolicy.Retry r, int maxAttempts) throws Stop, InterruptedException {
         String text = switch (r.kind()) {
-            case BACKOFF -> StatusText.retrying(r.reason(), r.after(), c.attempts + 1, c.o.maxAttempts());
+            case BACKOFF -> StatusText.retrying(r.reason(), r.after(), c.attempts + 1, maxAttempts);
             case RATE_LIMIT -> StatusText.rateLimited(r.after());
             case HOURLY_LIMIT -> StatusText.hourlyLimit(r.after());
             case BUSY -> StatusText.busy(r.after());
@@ -594,7 +723,40 @@ public final class JobRunner {
     private Stop fail(Run c, String reason) {
         c.job.update(JobState.FAILED, StatusText.failed(reason));
         event(c, "Hirdman Radar: " + subject(c.job) + FAILED + reason);
+        deleteLive(c);
         return new Stop();
+    }
+
+    /** The server sent more than a job can hold: the job ends and nothing more is added. */
+    private Stop unexpected(Run c, String why) {
+        error(c, "Hirdman Radar: " + subject(c.job) + ": " + why);
+        return fail(c, UNEXPECTED);
+    }
+
+    /** A failed run frees the slot its server job holds; a cancel does that itself, a Private project sends nothing. */
+    private void deleteLive(Run c) {
+        CancelToken.ServerJob live = c.token.serverJob();
+        if (live == null || c.token.cancelled() || offNow()) {
+            return;
+        }
+        c.token.serverJob(null);
+        deleteLater(live.radar(), live.id(), FAIL_DELETE_TIMEOUT);
+    }
+
+    private boolean offNow() {
+        try {
+            return options.get().offForProject();
+        } catch (RuntimeException e) {
+            return true;
+        }
+    }
+
+    private void deleteLater(Radar server, String id, Duration timeout) {
+        try {
+            calls.execute(() -> deleteQuietly(server, id, timeout));
+        } catch (RejectedExecutionException e) {
+            // Unloading: the server cancels a job nobody polls within a minute.
+        }
     }
 
     /** True for the event a failed job sends; Burp shows those as errors. Subjects never hold this text. */

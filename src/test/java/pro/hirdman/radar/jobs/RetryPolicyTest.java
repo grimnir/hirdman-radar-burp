@@ -28,7 +28,11 @@ class RetryPolicyTest {
     }
 
     static Decision decide(ApiException e, int used, int max, Duration waited429, double random) {
-        return RetryPolicy.decide(e, used, max, waited429, HOST, () -> random);
+        return RetryPolicy.decide(e, used, max, waited429, HOST, () -> random, false);
+    }
+
+    static Decision decidePoll(ApiException e, int used, int max) {
+        return RetryPolicy.decide(e, used, max, Duration.ZERO, HOST, () -> 0.5, true);
     }
 
     static Decision decide(ApiException e, int used) {
@@ -137,5 +141,30 @@ class RetryPolicyTest {
     @Test
     void malformedFails() {
         assertEquals(new Fail("Unexpected answer from the server"), decide(ApiException.malformed("x", null), 0));
+    }
+
+    @Test
+    void aPollWaitsAtMostFortyFiveSeconds() {
+        // The server cancels a job nobody polls for 60 s.
+        assertEquals(Duration.ofSeconds(45), ((Retry) decidePoll(http(503, "", "Retry-After", "900"), 0, 5)).after());
+        assertEquals(Duration.ofSeconds(45), ((Retry) decidePoll(http(429, "", "Retry-After", "3600"), 0, 5)).after());
+        assertEquals(new Retry(Duration.ofSeconds(45), false, Wait.HOURLY_LIMIT, "Hourly limit without a key reached"),
+                decidePoll(http(429, "{\"error\":\"hourly limit without a key: 300 hosts per hour\"}"), 0, 5));
+        assertEquals(Duration.ofSeconds(9), ((Retry) decidePoll(http(429, "", "Retry-After", "9"), 0, 5)).after());
+    }
+
+    @Test
+    void aMalformedPollIsTriedThreeTimesAtMost() {
+        ApiException e = ApiException.malformed("x", null);
+        Retry r = (Retry) decidePoll(e, 0, 5);
+        assertEquals(new Retry(Duration.ofSeconds(2), true, Wait.BACKOFF, "Unexpected answer from the server"), r);
+        assertEquals(Wait.BACKOFF, ((Retry) decidePoll(e, 1, 5)).kind());
+        assertEquals(new Fail("Unexpected answer from the server"), decidePoll(e, 2, 5));
+        assertEquals(new Fail("Unexpected answer from the server"), decidePoll(e, 1, 2));
+    }
+
+    @Test
+    void malformedFailsOutsidePolls() {
+        assertEquals(new Fail("Unexpected answer from the server"), decide(ApiException.malformed("x", null), 0, 5, Duration.ZERO, 0.5));
     }
 }

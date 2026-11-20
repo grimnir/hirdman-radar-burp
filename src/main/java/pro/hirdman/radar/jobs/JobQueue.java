@@ -4,8 +4,14 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import pro.hirdman.radar.Threads;
 import pro.hirdman.radar.api.Radar;
 
 /** Plugin job queue: one job runs at a time on a background thread, never on the Swing thread. */
@@ -16,20 +22,41 @@ public final class JobQueue {
     /** Finished jobs shown in the Jobs strip; older ones drop off, waiting and running ones always stay. */
     static final int KEEP_FINISHED = 50;
 
+    /** Runs a task after a delay; tests pass their own clock. */
+    @FunctionalInterface
+    interface Timer {
+        Future<?> schedule(Runnable task, Duration delay);
+    }
+
     private final JobRunner runner;
-    private final Supplier<Radar> radar;
     private final Consumer<Job> onChange;
+    private final Timer timer;
+    private final Runnable closeTimer;
     private final List<Job> jobs = new ArrayList<>();
-    private final List<Job> pendingRechecks = new ArrayList<>();
     private final Thread worker;
     private volatile boolean closed;
     private Job current;
 
+    public JobQueue(JobRunner runner, Consumer<Job> onChange) {
+        this(runner, onChange, Executors.newSingleThreadScheduledExecutor(Threads.daemon("hirdman-radar-timer")));
+    }
+
+    /** Kept for existing callers: a delete now goes to the server the job was created on, so {@code radar} is unused. */
     public JobQueue(JobRunner runner, Supplier<Radar> radar, Consumer<Job> onChange) {
+        this(runner, onChange);
+    }
+
+    private JobQueue(JobRunner runner, Consumer<Job> onChange, ScheduledExecutorService timer) {
+        this(runner, onChange, (task, delay) -> timer.schedule(task, delay.toNanos(), TimeUnit.NANOSECONDS),
+                timer::shutdownNow);
+    }
+
+    JobQueue(JobRunner runner, Consumer<Job> onChange, Timer timer, Runnable closeTimer) {
         this.runner = runner;
-        this.radar = radar;
         this.onChange = onChange;
-        this.worker = daemon("hirdman-radar-jobs", this::work);
+        this.timer = timer;
+        this.closeTimer = closeTimer;
+        this.worker = Threads.daemon("hirdman-radar-jobs").newThread(this::work);
         worker.start();
     }
 
@@ -57,11 +84,11 @@ public final class JobQueue {
         if (!job.markCancelled(true)) {
             return;
         }
-        // Read after markCancelled: a runner that sets the id later sees the cancel and deletes it itself.
-        String serverJobId = job.token().serverJobId();
-        if (serverJobId != null) {
-            daemon("hirdman-radar-cancel",
-                    () -> JobRunner.deleteQuietly(radar.get(), serverJobId, CANCEL_DELETE_TIMEOUT)).start();
+        // Read after markCancelled: a runner that sets the job later sees the cancel and deletes it itself.
+        CancelToken.ServerJob serverJob = job.token().serverJob();
+        if (serverJob != null) {
+            Threads.daemon("hirdman-radar-cancel").newThread(
+                    () -> JobRunner.deleteQuietly(serverJob.radar(), serverJob.id(), CANCEL_DELETE_TIMEOUT)).start();
         }
     }
 
@@ -112,17 +139,18 @@ public final class JobQueue {
             }
             closed = true;
             all = new ArrayList<>(jobs);
-            all.addAll(pendingRechecks);
             running = current;
             notifyAll();
         }
+        closeTimer.run();
         all.forEach(j -> j.markCancelled(false));
-        String serverJobId = running == null ? null : running.token().serverJobId();
+        CancelToken.ServerJob serverJob = running == null ? null : running.token().serverJob();
         // The worker is not waited for: a hanging request may ignore the interrupt, and its run is cancelled anyway.
         worker.interrupt();
-        if (serverJobId != null) {
-            Thread delete = daemon("hirdman-radar-unload",
-                    () -> JobRunner.deleteQuietly(radar.get(), serverJobId, SHUTDOWN_BUDGET));
+        runner.close();
+        if (serverJob != null) {
+            Thread delete = Threads.daemon("hirdman-radar-unload").newThread(
+                    () -> JobRunner.deleteQuietly(serverJob.radar(), serverJob.id(), SHUTDOWN_BUDGET));
             delete.start();
             try {
                 delete.join(SHUTDOWN_BUDGET.toMillis());
@@ -130,6 +158,12 @@ public final class JobQueue {
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    /** Waits for the worker to end after {@link #shutdown}; for tests. */
+    boolean awaitWorker(Duration d) throws InterruptedException {
+        worker.join(d.toMillis());
+        return !worker.isAlive();
     }
 
     private void work() {
@@ -143,7 +177,7 @@ public final class JobQueue {
             if (job == null) {
                 return;
             }
-            List<String> again = runner.run(job, job.token());
+            List<String> again = run(job);
             boolean pruned;
             synchronized (this) {
                 current = null;
@@ -155,6 +189,22 @@ public final class JobQueue {
             if (!again.isEmpty()) {
                 scheduleRecheck(again);
             }
+        }
+    }
+
+    /** Whatever the run throws, the job ends and the worker goes on with the next one. */
+    private List<String> run(Job job) {
+        try {
+            return runner.run(job, job.token());
+        } catch (Throwable t) {
+            // An Error (stack overflow, out of memory, a missing class) used to end the only worker silently.
+            job.update(JobState.FAILED, StatusText.failed(JobRunner.CRASHED));
+            try {
+                runner.crashed(job, t);
+            } catch (Throwable again) {
+                // Logging failed too; the job is already marked failed.
+            }
+            return List.of();
         }
     }
 
@@ -185,30 +235,32 @@ public final class JobQueue {
     }
 
     private Job nextWaiting() {
-        return jobs.stream().filter(j -> j.state() == JobState.WAITING).findFirst().orElse(null);
+        return jobs.stream().filter(j -> j.state() == JobState.WAITING && !j.held()).findFirst().orElse(null);
     }
 
-    /** Hosts the server could not check get one more try, as a job of their own, after a pause. */
+    /** Hosts the server could not check get one more try, as a job of their own that waits in the list, cancellable. */
     private void scheduleRecheck(List<String> hosts) {
-        Job recheck = new Job(JobKind.CHECK_HOSTS, null, hosts, false, true, this::changed);
-        synchronized (this) {
-            if (closed) {
-                return;
-            }
-            pendingRechecks.add(recheck);
+        if (closed) {
+            return;
         }
-        daemon("hirdman-radar-recheck", () -> {
-            try {
-                runner.sleeper().sleep(JobRunner.RECHECK_DELAY, recheck);
-            } catch (InterruptedException e) {
-                return;
-            } finally {
-                synchronized (this) {
-                    pendingRechecks.remove(recheck);
-                }
+        Job recheck = new Job(JobKind.CHECK_HOSTS, null, hosts, false, true, this::changed);
+        recheck.hold(StatusText.recheckIn(JobRunner.RECHECK_DELAY));
+        if (add(recheck) != recheck) {
+            return;
+        }
+        try {
+            timer.schedule(() -> release(recheck), JobRunner.RECHECK_DELAY);
+        } catch (RejectedExecutionException e) {
+            // Unloading: the queue is closed and the job cancelled.
+        }
+    }
+
+    private void release(Job recheck) {
+        if (recheck.release()) {
+            synchronized (this) {
+                notifyAll();
             }
-            add(recheck);
-        }).start();
+        }
     }
 
     /** Queues the job unless the queue is closed; an active job doing the same work is returned instead. */
@@ -218,7 +270,8 @@ public final class JobQueue {
             if (closed) {
                 return job;
             }
-            same = jobs.stream().filter(j -> !j.state().finished() && j.sameWork(job)).findFirst().orElse(null);
+            // A held re-check does not swallow a check the user asks for now.
+            same = jobs.stream().filter(j -> !j.state().finished() && !j.held() && j.sameWork(job)).findFirst().orElse(null);
             if (same == null) {
                 jobs.add(job);
                 notifyAll();
@@ -237,11 +290,5 @@ public final class JobQueue {
         if (!closed) {
             onChange.accept(job);
         }
-    }
-
-    private static Thread daemon(String name, Runnable body) {
-        Thread t = new Thread(body, name);
-        t.setDaemon(true);
-        return t;
     }
 }
