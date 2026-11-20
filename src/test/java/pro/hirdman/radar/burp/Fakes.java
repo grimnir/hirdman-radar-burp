@@ -1,9 +1,13 @@
 package pro.hirdman.radar.burp;
 
+import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /** Proxy fakes of Montoya interfaces: answers by method name, empty Optional/List otherwise. */
 public final class Fakes {
@@ -19,7 +23,14 @@ public final class Fakes {
     private Fakes() {
     }
 
+    /** Throws IllegalArgumentException on a key that is not a method of the type: a typo would silently fall back to the defaults. */
     public static <T> T fake(Class<T> type, Map<String, Object> answers) {
+        Set<String> methods = Arrays.stream(type.getMethods()).map(Method::getName).collect(Collectors.toSet());
+        for (String name : answers.keySet()) {
+            if (!methods.contains(name)) {
+                throw new IllegalArgumentException("No method " + type.getSimpleName() + "." + name);
+            }
+        }
         return fake(type, (name, args) -> answers.containsKey(name) ? answers.get(name) : DEFAULT);
     }
 
