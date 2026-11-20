@@ -43,6 +43,7 @@ import pro.hirdman.radar.jobs.JobRunner;
 import pro.hirdman.radar.jobs.MetaGate;
 import pro.hirdman.radar.jobs.Sleeper;
 import pro.hirdman.radar.model.HostResult;
+import pro.hirdman.radar.model.LoginPage;
 import pro.hirdman.radar.model.ResultStore;
 import pro.hirdman.radar.model.Risk;
 
@@ -78,6 +79,7 @@ class RadarTabTest {
     final List<String> errors = new CopyOnWriteArrayList<>();
     final List<List<HostResult>> reported = new ArrayList<>();
     final List<List<String>> siteMapped = new ArrayList<>();
+    final List<List<HostResult>> organized = new ArrayList<>();
     final List<ScopeChangeHandler> scopeHandlers = new CopyOnWriteArrayList<>();
     final AtomicReference<Options> options = new AtomicReference<>(Options.defaults());
     final Map<String, Boolean> projectData = new HashMap<>();
@@ -138,6 +140,9 @@ class RadarTabTest {
             }, hosts -> {
                 siteMapped.add(hosts);
                 return "site map: " + hosts.size();
+            }, rows -> {
+                organized.add(rows);
+                return "organizer: " + rows.size();
             }, this::walk, () -> true, () -> suiteFrame, Runnable::run);
         }
         return tab;
@@ -294,7 +299,8 @@ class RadarTabTest {
         checked("a.example.com", "high");
         selectAll();
         assertEquals(List.of("Check selected hosts", "Check again", "Re-check failed", "Add selected to scope", "Add selected to site map",
-                "Create issues for selected hosts", "Copy hosts", "Copy as CSV", "Remove from results"), menuItems());
+                "Send login page to Organizer", "Create issues for selected hosts", "Copy hosts", "Copy as CSV",
+                "Remove from results"), menuItems());
         options.set(new Options(Options.DEFAULT_SERVER, false, false, Risk.LOW, true, false, true, 5, false));
         assertTrue(menuItems().contains("Create issues for selected hosts"));
     }
@@ -327,7 +333,7 @@ class RadarTabTest {
     @Test
     void withoutIssuesTheRowMenuOffersNone() {
         // Community Edition has no issues, so the item would only explain itself.
-        tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, null, hosts -> "", this::walk,
+        tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, null, hosts -> "", rows -> "", this::walk,
                 () -> true, () -> suiteFrame, Runnable::run);
         checked("a.example.com", "high");
         selectAll();
@@ -337,7 +343,7 @@ class RadarTabTest {
     @Test
     void addSelectedToScopeRunsInTheBackground() {
         List<Runnable> later = new ArrayList<>();
-        tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, List::size, hosts -> "", this::walk,
+        tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, List::size, hosts -> "", rows -> "", this::walk,
                 () -> true, () -> suiteFrame, later::add);
         checked("a.example.com", null);
         selectAll();
@@ -345,6 +351,31 @@ class RadarTabTest {
         assertEquals(List.of(), included);
         later.forEach(Runnable::run);
         assertEquals(List.of("https://a.example.com/"), included);
+    }
+
+    @Test
+    void loginPagesGoToOrganizerFromTheSelectedRowsThatHaveOne() {
+        checked("a.example.com", "high");
+        checked("b.example.com", null);
+        selectAll();
+        assertFalse(menuItem("Send login page to Organizer").isEnabled(), "no selected row has a login page");
+        store.noteLogin("a.example.com", new LoginPage(LoginPage.Kind.KNOWN_PATH, "Outlook on the web", "/owa/"));
+        selectAll();
+        assertTrue(menuItem("Send login page to Organizer").isEnabled());
+        menuItem("Send login page to Organizer").doClick(0);
+        assertEquals(List.of(List.of("a.example.com")), organized.stream().map(r -> r.stream().map(HostResult::host).toList()).toList());
+        assertEquals(List.of("organizer: 1"), infos);
+    }
+
+    @Test
+    void organizerWorksInAPrivateProject() {
+        // Nothing leaves Burp: the item is copied from Burp's own stores.
+        projectSwitch.set(true);
+        checked("a.example.com", "high");
+        store.noteLogin("a.example.com", new LoginPage(LoginPage.Kind.KNOWN_PATH, "Outlook on the web", "/owa/"));
+        selectAll();
+        menuItem("Send login page to Organizer").doClick(0);
+        assertEquals(1, organized.size());
     }
 
     @Test
@@ -506,7 +537,7 @@ class RadarTabTest {
 
     @Test
     void oneIssueForOneHostIsSingular() {
-        tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, List::size, hosts -> "", this::walk,
+        tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, List::size, hosts -> "", rows -> "", this::walk,
                 () -> true, () -> suiteFrame, Runnable::run);
         options.set(new Options(Options.DEFAULT_SERVER, false, false, Risk.LOW, true, false, true, 5, false));
         scope.add("https://a.example.com/");

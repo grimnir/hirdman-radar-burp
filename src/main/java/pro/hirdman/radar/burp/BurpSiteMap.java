@@ -197,7 +197,7 @@ public final class BurpSiteMap {
     }
 
     /** Where the authority of an http(s) URL ends, or -1 when it has none. Runs for every site map item, so no URI parsing. */
-    private static int authorityEnd(String url) {
+    static int authorityEnd(String url) {
         int start;
         if (url == null) {
             return -1;
@@ -217,7 +217,7 @@ public final class BurpSiteMap {
     }
 
     /** The host of a lower-case scheme://authority, without the port. */
-    private static String host(String origin) {
+    static String host(String origin) {
         String authority = origin.substring(origin.indexOf("://") + 3);
         int colon = authority.indexOf(':');
         return colon < 0 ? authority : authority.substring(0, colon);

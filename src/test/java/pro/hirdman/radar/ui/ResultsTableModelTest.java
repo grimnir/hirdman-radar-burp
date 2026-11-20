@@ -117,8 +117,23 @@ class ResultsTableModelTest {
     }
 
     @Test
+    void loginPageWithLeaksKeepsHostsWorthAuthTesting() {
+        LoginPage owa = new LoginPage(LoginPage.Kind.KNOWN_PATH, "Outlook on the web", "/owa/");
+        checked("a.example.com", 1, 0, 0, 0, 0, finding("high"));
+        checked("b.example.com", 0, 0, 0, 0, 0);
+        checked("c.example.com", 0, 0, 3, 0, 0, finding("medium"));
+        store.found(D, List.of("d.example.com"));
+        store.noteLogin("a.example.com", owa);
+        store.noteLogin("b.example.com", owa);
+        store.noteLogin("d.example.com", owa);
+        ResultsTableModel m = model(h -> true);
+        m.setFilter(ResultsFilter.LOGIN_WITH_LEAKS);
+        assertEquals(List.of("a.example.com"), hosts(m));
+    }
+
+    @Test
     void filterLabelsAreTheSpecOnes() {
-        assertEquals(List.of("All", "With leaks", "Not checked yet", "Check failed", "In scope"),
+        assertEquals(List.of("All", "With leaks", "Login page + leaks", "Not checked yet", "Check failed", "In scope"),
                 List.of(ResultsFilter.values()).stream().map(ResultsFilter::toString).toList());
     }
 
