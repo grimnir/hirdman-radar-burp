@@ -222,6 +222,49 @@ class BurpIssuesTest {
         return new IssueSpec("n", "", "", "https://a.example.com/", severity, confidence, "");
     }
 
+    static List<String> names(List<AuditIssue> issues) {
+        return issues.stream().map(AuditIssue::name).toList();
+    }
+
+    @Test
+    void theScannerGetsTheMissingIssuesAndTheSiteMapPathThenSkipsThem() {
+        BurpIssues b = issues();
+        assertEquals(List.of(P + STEALER, P + WORK), names(b.forScan(row(HostStatus.CHECKED, STEALER, WORK))));
+        assertEquals(List.of(), added, "the scanner adds what the check returns");
+        assertEquals(0, b.report(row(HostStatus.CHECKED, STEALER, WORK)));
+        assertEquals(List.of(), names(b.forScan(row(HostStatus.CHECKED, STEALER, WORK))));
+        assertEquals(List.of(), added);
+    }
+
+    @Test
+    void theScannerSkipsIssuesTheSiteMapPathOrBurpAlreadyHas() {
+        existing.add(P + STEALER);
+        BurpIssues b = issues();
+        assertEquals(List.of(P + WORK), names(b.forScan(row(HostStatus.CHECKED, STEALER, WORK))));
+        BurpIssues c = issues();
+        existing.clear();
+        assertEquals(1, c.report(row(HostStatus.CHECKED, STEALER)));
+        assertEquals(List.of(P + WORK), names(c.forScan(row(HostStatus.CHECKED, STEALER, WORK))));
+    }
+
+    @Test
+    void theScannerFollowsTheScopeAndStatusRules() {
+        inScope = false;
+        BurpIssues b = issues();
+        assertEquals(List.of(), b.forScan(row(HostStatus.CHECKED, STEALER)));
+        assertEquals(List.of(), b.forScan(row(HostStatus.NOT_CHECKED)));
+        options = new IssueOptions(false, true, Risk.LOW, null);
+        assertEquals(List.of(P + STEALER), names(b.forScan(row(HostStatus.CHECKED, STEALER))),
+                "a scan is the user's own request, like the row menu: the auto option does not apply");
+    }
+
+    @Test
+    void aFailedLookupGivesTheScannerNothing() {
+        lookupFails = true;
+        assertEquals(List.of(), issues().forScan(row(HostStatus.CHECKED, STEALER)));
+        assertEquals(1, errors.size());
+    }
+
     @Test
     void burpIsAskedOnlyForTheIssuesOfEachHostOncePerSession() {
         // All issues of a big project would be loaded at once; a prefix lookup per host loads only its own.

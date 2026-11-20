@@ -2,12 +2,15 @@ package pro.hirdman.radar;
 
 import burp.api.montoya.BurpExtension;
 import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.core.BurpSuiteEdition;
 import burp.api.montoya.logging.Logging;
+import burp.api.montoya.scanner.scancheck.ScanCheckType;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.function.ToIntFunction;
 import pro.hirdman.radar.api.ConnectionSettings;
 import pro.hirdman.radar.api.Radar;
 import pro.hirdman.radar.api.RadarClient;
@@ -20,15 +23,17 @@ import pro.hirdman.radar.burp.ProjectStore;
 import pro.hirdman.radar.burp.ProxyHighlight;
 import pro.hirdman.radar.burp.RadarEditor;
 import pro.hirdman.radar.burp.RadarMenu;
+import pro.hirdman.radar.burp.RadarPayloads;
+import pro.hirdman.radar.burp.RadarScanCheck;
 import pro.hirdman.radar.burp.RadarSettings;
 import pro.hirdman.radar.burp.ScopeIssues;
 import pro.hirdman.radar.burp.TrafficWatcher;
-import pro.hirdman.radar.config.Options;
 import pro.hirdman.radar.config.ProjectSwitch;
 import pro.hirdman.radar.jobs.JobQueue;
 import pro.hirdman.radar.jobs.JobRunner;
 import pro.hirdman.radar.jobs.MetaGate;
 import pro.hirdman.radar.jobs.Sleeper;
+import pro.hirdman.radar.model.HostResult;
 import pro.hirdman.radar.model.ResultStore;
 import pro.hirdman.radar.traffic.NewHostBatcher;
 import pro.hirdman.radar.ui.Edt;
@@ -42,14 +47,17 @@ public final class HirdmanRadar implements BurpExtension {
     /** Unload must not hold Burp up: the job queue takes up to 2 s of this, queued Burp calls the rest. */
     static final Duration UNLOAD_BUDGET = Duration.ofSeconds(4);
     static final Duration BURP_THREAD_WAIT = Duration.ofSeconds(2);
+    static final String NO_ISSUES = "Hirdman Radar: Burp Suite Community Edition has no issues; the counts are in the Hirdman Radar tab";
 
     @Override
     public void initialize(MontoyaApi api) {
         api.extension().setName(NAME);
         Logging log = api.logging();
+        // Community Edition has no scanner and no issues: everything else works the same.
+        boolean pro = hasScanner(api.burpSuite().version().edition());
 
         ProjectSwitch projectSwitch = new ProjectSwitch(api.persistence().extensionData());
-        RadarSettings settings = new RadarSettings(api, projectSwitch::off);
+        RadarSettings settings = new RadarSettings(api, projectSwitch::off, pro);
         ProjectStore project = new ProjectStore(api.persistence().extensionData(), log::logToError);
         ResultStore store = project.load();
 
@@ -79,21 +87,15 @@ public final class HirdmanRadar implements BurpExtension {
             }
         });
 
-        BurpIssues issues = new BurpIssues(api, () -> settings.snapshot().issueOptions());
         // Issues and site map calls go to their own thread: job polling must never wait on Burp.
         BurpThread burpThread = new BurpThread(log::logToError);
         BurpSiteMap siteMap = new BurpSiteMap(api, burpThread);
+        ToIntFunction<List<HostResult>> createIssues = pro ? issues(api, settings, store, burpThread) : noIssues(log);
         store.addCheckListener(row -> {
-            Options o = settings.snapshot();
-            if (o.autoIssues()) {
-                burpThread.execute(() -> issues.report(row));
-            }
-            if (o.addToSiteMap()) {
+            if (settings.snapshot().addToSiteMap()) {
                 siteMap.addFound(List.of(row.host()));
             }
         });
-        api.scope().registerScopeChangeHandler(new ScopeIssues(store::all, () -> settings.snapshot().autoIssues(),
-                issues::reportAll, burpThread, log::logToError));
         store.addFoundListener(hosts -> {
             if (settings.snapshot().addToSiteMap()) {
                 siteMap.addFound(hosts);
@@ -101,7 +103,7 @@ public final class HirdmanRadar implements BurpExtension {
         });
 
         RadarTab tab = Edt.call(() -> new RadarTab(api, store, queue, gate, settings::snapshot, projectSwitch, radar,
-                issues::reportAgain, siteMap::addSelected, () -> BurpSiteMap.inScopeHosts(api.siteMap(), api.scope()::isInScope)));
+                createIssues, siteMap::addSelected, () -> BurpSiteMap.inScopeHosts(api.siteMap(), api.scope()::isInScope)));
         tabRef.set(tab);
         api.userInterface().registerSuiteTab("Hirdman Radar", tab);
         api.userInterface().registerContextMenuItemsProvider(new RadarMenu(queue, tab, tab::reveal));
@@ -110,14 +112,10 @@ public final class HirdmanRadar implements BurpExtension {
 
         NewHostBatcher batcher = new NewHostBatcher(Duration.ofSeconds(60), Duration.ofHours(24),
                 store::lastChecked, () -> settings.snapshot().serverHost());
-        store.addLoginListener(row -> {
-            if (settings.snapshot().autoIssues()) {
-                burpThread.execute(() -> issues.report(row));
-            }
-        });
         TrafficWatcher traffic = new TrafficWatcher(batcher, settings::watchTraffic, queue, log::logToError, new LoginWatch(store));
         api.http().registerHttpHandler(traffic);
         api.proxy().registerResponseHandler(new ProxyHighlight(store, settings::highlightProxy, log::logToError));
+        RadarPayloads.all(store::all, api.scope()::isInScope).forEach(api.intruder()::registerPayloadGeneratorProvider);
         traffic.start();
         project.start();
 
@@ -126,6 +124,41 @@ public final class HirdmanRadar implements BurpExtension {
             runAll(log::logToError, traffic::close, tab::close, queue::shutdown,
                     () -> burpThread.close(left(end, BURP_THREAD_WAIT)), project::close);
         });
+    }
+
+    /** The scanner, and with it Burp's issues, are in Professional only; Burp DAST would need a mode without the tab. */
+    static boolean hasScanner(BurpSuiteEdition edition) {
+        return edition == BurpSuiteEdition.PROFESSIONAL;
+    }
+
+    /**
+     * Professional: automatic issues on checks, login pages and scope changes, and the passive scan check; all of them
+     * dedupe through one {@link BurpIssues}. Returns the row menu's action.
+     */
+    private static ToIntFunction<List<HostResult>> issues(MontoyaApi api, RadarSettings settings, ResultStore store,
+            BurpThread burpThread) {
+        Logging log = api.logging();
+        BurpIssues issues = new BurpIssues(api, () -> settings.snapshot().issueOptions());
+        Consumer<HostResult> auto = row -> {
+            if (settings.snapshot().autoIssues()) {
+                burpThread.execute(() -> issues.report(row));
+            }
+        };
+        store.addCheckListener(auto);
+        store.addLoginListener(auto);
+        api.scope().registerScopeChangeHandler(new ScopeIssues(store::all, () -> settings.snapshot().autoIssues(),
+                issues::reportAll, burpThread, log::logToError));
+        api.scanner().registerPassiveScanCheck(new RadarScanCheck(store::host, issues::forScan, log::logToError),
+                ScanCheckType.PER_HOST);
+        return issues::reportAgain;
+    }
+
+    /** Community Edition: the row menu's issue action says why it creates none. */
+    static ToIntFunction<List<HostResult>> noIssues(Logging log) {
+        return rows -> {
+            log.raiseInfoEvent(NO_ISSUES);
+            return 0;
+        };
     }
 
     /** What is left of the unload budget ending at {@code end}, at most {@code max}. */
