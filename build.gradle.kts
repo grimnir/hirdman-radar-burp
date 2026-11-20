@@ -40,6 +40,9 @@ tasks.test {
     useJUnitPlatform()
     // A dialog in a test fails it instead of opening a window on the developer's screen.
     systemProperty("java.awt.headless", "true")
+    // ProjectRulesTest reads the sources and READMEs, so a comment change reruns it.
+    inputs.dir("src/main").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(fileTree(".") { include("README*.md") }).withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 tasks.jar {
