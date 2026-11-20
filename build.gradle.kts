@@ -61,9 +61,8 @@ tasks.test {
 
 // Gson's Error Prone annotations are for compilers only (Gson marks them optional), so neither the jar
 // nor the tests carry them and the tests run Gson as Burp does.
-listOf(configurations.runtimeClasspath, configurations.testRuntimeClasspath).forEach {
-    it { exclude(group = "com.google.errorprone", module = "error_prone_annotations") }
-}
+configurations.runtimeClasspath { exclude(group = "com.google.errorprone", module = "error_prone_annotations") }
+configurations.testRuntimeClasspath { exclude(group = "com.google.errorprone", module = "error_prone_annotations") }
 
 tasks.jar {
     archiveBaseName = "hirdman-radar"
