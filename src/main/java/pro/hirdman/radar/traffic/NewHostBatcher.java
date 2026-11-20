@@ -2,6 +2,7 @@ package pro.hirdman.radar.traffic;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -14,7 +15,8 @@ import pro.hirdman.radar.model.HostNames;
 
 /**
  * Collects in-scope public host names seen in traffic and hands them out as one batch at most every {@code every}.
- * A host checked or batched within {@code skipCheckedWithin} is skipped. Thread-safe.
+ * A host checked or batched within {@code skipCheckedWithin} is skipped; a batch whose check did not finish is handed
+ * back through {@link #retry} or {@link #forget}. Thread-safe.
  */
 public final class NewHostBatcher {
 
@@ -78,6 +80,22 @@ public final class NewHostBatcher {
             out.forEach(h -> batched.put(h, now));
         }
         return out;
+    }
+
+    /** Hosts of a check that failed: they go back to the queue and leave with the next batch. */
+    public synchronized void retry(Collection<String> hosts) {
+        hosts.forEach(batched::remove);
+        for (String h : hosts) {
+            if (pending.size() >= MAX_PENDING) {
+                break;
+            }
+            pending.add(h);
+        }
+    }
+
+    /** Hosts of a cancelled check: not queued again, but taken the next time traffic shows them. */
+    public synchronized void forget(Collection<String> hosts) {
+        hosts.forEach(batched::remove);
     }
 
     /** Forgets what is pending, as when the setting is turned off. */

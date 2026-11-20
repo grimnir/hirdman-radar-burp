@@ -86,13 +86,26 @@ class TrafficWatcherTest {
     }
 
     static HttpRequestToBeSent request(String host, boolean inScope, ToolType tool) {
+        return request(host, inScope, tool, new java.util.concurrent.atomic.AtomicInteger());
+    }
+
+    static HttpRequestToBeSent request(String host, boolean inScope, ToolType tool,
+            java.util.concurrent.atomic.AtomicInteger scopeAsked) {
         ToolSource source = fake(ToolSource.class, (m, a) -> switch (m) {
             case "toolType" -> tool;
             case "isFromTool" -> Arrays.asList((ToolType[]) a[0]).contains(tool);
             default -> Fakes.DEFAULT;
         });
         HttpService service = fake(HttpService.class, Map.of("host", host));
-        return fake(HttpRequestToBeSent.class, Map.of("toolSource", source, "isInScope", inScope, "httpService", service));
+        return fake(HttpRequestToBeSent.class, (m, a) -> switch (m) {
+            case "toolSource" -> source;
+            case "httpService" -> service;
+            case "isInScope" -> {
+                scopeAsked.incrementAndGet();
+                yield inScope;
+            }
+            default -> Fakes.DEFAULT;
+        });
     }
 
     @Test
@@ -242,6 +255,61 @@ class TrafficWatcherTest {
             Thread.sleep(10);
         }
         watcher().drainNow(T0.plusSeconds(120));
-        assertEquals(List.of(List.of("a.example.com"), List.of("b.example.com")), queue.jobs().stream().map(Job::hosts).toList());
+        // The first check failed (no server here), so its host goes out again with the new one.
+        assertEquals(List.of(List.of("a.example.com"), List.of("b.example.com", "a.example.com")),
+                queue.jobs().stream().map(Job::hosts).toList());
+    }
+
+    @Test
+    void intruderScannerAndSequencerRequestsAreNotNoted() {
+        java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
+        for (ToolType t : List.of(ToolType.INTRUDER, ToolType.SCANNER, ToolType.SEQUENCER)) {
+            watcher().handleHttpRequestToBeSent(request("a.example.com", true, t, asked));
+        }
+        watcher().drainNow(T0);
+        assertTrue(queue.jobs().isEmpty());
+        assertEquals(0, asked.get());
+    }
+
+    @Test
+    void aHostNotedOnceIsNotAskedAboutScopeAgainUntilTheNextDrain() {
+        java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
+        for (int i = 0; i < 5; i++) {
+            watcher().handleHttpRequestToBeSent(request("a.example.com", true, ToolType.PROXY, asked));
+        }
+        assertEquals(1, asked.get());
+        watcher().drainNow(T0);
+        watcher().handleHttpRequestToBeSent(request("a.example.com", true, ToolType.PROXY, asked));
+        assertEquals(2, asked.get());
+    }
+
+    @Test
+    void outOfScopeRequestsAreAskedEachTime() {
+        // Scope can depend on the path, so a host seen out of scope once may be in scope on its next request.
+        java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
+        watcher().handleHttpRequestToBeSent(request("a.example.com", false, ToolType.PROXY, asked));
+        watcher().handleHttpRequestToBeSent(request("a.example.com", true, ToolType.PROXY, asked));
+        assertEquals(2, asked.get());
+        watcher().drainNow(T0);
+        assertEquals(List.of(List.of("a.example.com")), queue.jobs().stream().map(Job::hosts).toList());
+    }
+
+    @Test
+    void aCancelledTrafficCheckIsNotSentAgainUntilItsHostsShowUp() throws Exception {
+        hold = new java.util.concurrent.CountDownLatch(1);
+        Job first;
+        try {
+            watcher().handleHttpRequestToBeSent(request("a.example.com", true, ToolType.PROXY));
+            watcher().drainNow(T0);
+            first = queue.jobs().get(0);
+            queue.cancel(first);
+        } finally {
+            hold.countDown();
+        }
+        watcher().drainNow(T0.plusSeconds(60));
+        assertEquals(1, queue.jobs().size());
+        watcher().handleHttpRequestToBeSent(request("a.example.com", true, ToolType.PROXY));
+        watcher().drainNow(T0.plusSeconds(120));
+        assertEquals(List.of(List.of("a.example.com"), List.of("a.example.com")), queue.jobs().stream().map(Job::hosts).toList());
     }
 }

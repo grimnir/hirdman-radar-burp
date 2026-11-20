@@ -95,6 +95,37 @@ class NewHostBatcherTest {
     }
 
     @Test
+    void hostsOfAFailedCheckGoBackToTheQueue() {
+        b.offer("a.example.com", true);
+        List<String> batch = b.drain(T0);
+        b.retry(batch);
+        assertEquals(List.of("a.example.com"), b.drain(T0.plusSeconds(60)));
+    }
+
+    @Test
+    void hostsOfACancelledCheckAreTakenAgainWhenTrafficShowsThem() {
+        b.offer("a.example.com", true);
+        List<String> batch = b.drain(T0);
+        b.forget(batch);
+        assertEquals(List.of(), b.drain(T0.plusSeconds(60)));
+        b.offer("a.example.com", true);
+        assertEquals(List.of("a.example.com"), b.drain(T0.plusSeconds(120)));
+    }
+
+    @Test
+    void hostsGivenBackRespectTheCap() {
+        for (int i = 0; i < NewHostBatcher.MAX_PENDING; i++) {
+            b.offer("h" + i + ".example.com", true);
+        }
+        List<String> batch = b.drain(T0);
+        for (int i = 0; i < NewHostBatcher.MAX_PENDING; i++) {
+            b.offer("n" + i + ".example.com", true);
+        }
+        b.retry(batch);
+        assertEquals(NewHostBatcher.MAX_PENDING, b.drain(T0.plusSeconds(60)).size());
+    }
+
+    @Test
     void serverHostIsComparedAsAName() {
         server.set("SCAN.Hirdman.PRO.");
         b.offer("scan.hirdman.pro", true);
