@@ -67,8 +67,8 @@ The search runs on the HIRDMAN server, and Burp gets the finished list.
 | *Scope* | Whether the host is in Burp's target scope |
 | *Infostealer* | Infostealer log records that mention the host: malware took saved logins, cookies or an email address at the host from an infected device |
 | *Work* | Breach records with work email addresses |
-| *Personal* | Breach records with credentials for the host, whoever they belong to |
-| *DB rec* | Records in breached databases that mention the host together with an email or URL |
+| *Host logins* | Breach records with credentials for a site on this host, whoever they belong to. For a public service these are its users |
+| *DB records* | Records in breached databases that mention the host together with an email or URL |
 | *Latest breach* | The newest known breach date among the 10 largest sources. Infostealer logs, database records and some sources have no date, so newer breaches are possible |
 | *Login page* | A login page seen in Burp's traffic |
 | *Status* | The state of the check; the tooltip shows when it last ran |

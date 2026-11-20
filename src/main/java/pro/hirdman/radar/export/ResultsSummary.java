@@ -16,6 +16,9 @@ public final class ResultsSummary {
 
     static final String NOTES = ResultsExport.NOTE + " Partial check: about a third of a full HIRDMAN review. A full review shows"
             + " which accounts and devices are affected and whether the passwords still work.";
+    /** A public service's host counts its users' logins, not the company's. */
+    static final String HOST_LOGINS = "Host logins are credentials for a site on the host, whoever they belong to: for a public"
+            + " service, its users.";
     private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC);
 
     private ResultsSummary() {
@@ -33,13 +36,13 @@ public final class ResultsSummary {
         if (leaks.isEmpty()) {
             b.append("No leaks were counted for the checked hosts.\n\n");
         } else {
-            b.append("| Host | Risk | Infostealer | Work | Personal | DB records | Latest breach |\n|---|---|---|---|---|---|---|\n");
+            b.append("| Host | Risk | Infostealer | Work | Host logins | DB records | Latest breach |\n|---|---|---|---|---|---|---|\n");
             for (HostResult r : leaks) {
                 b.append("| ").append(r.host()).append(" | ").append(r.risk().label()).append(" | ").append(r.stealer())
                         .append(" | ").append(r.work()).append(" | ").append(r.personal()).append(" | ").append(r.dbRecords())
                         .append(" | ").append(Objects.toString(r.latestBreach(), "")).append(" |\n");
             }
-            b.append('\n');
+            b.append('\n').append(HOST_LOGINS).append("\n\n");
         }
         b.append(NOTES).append('\n');
         IssuePlanner.siteUrl(domain, site).ifPresent(url ->

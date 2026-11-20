@@ -33,7 +33,7 @@ public final class ResultsTableModel extends AbstractTableModel {
     static final int LOGIN = 8;
     static final int STATUS = 9;
     private static final DateTimeFormatter AT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC);
-    private static final List<String> COLUMNS = List.of("Host", "Risk", "Scope", "Infostealer", "Work", "Personal", "DB rec",
+    private static final List<String> COLUMNS = List.of("Host", "Risk", "Scope", "Infostealer", "Work", "Host logins", "DB records",
             "Latest breach", "Login page", "Status");
     private static final Comparator<Row> ORDER = Comparator.comparing((Row r) -> r.result().risk()).reversed()
             .thenComparing(r -> r.result().host());

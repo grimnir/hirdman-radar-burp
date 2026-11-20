@@ -194,7 +194,7 @@ class ResultsTableTest {
         show();
         table.getRowSorter().setSortKeys(List.of(new RowSorter.SortKey(ResultsTableModel.HOST, SortOrder.DESCENDING)));
         table.setRowSelectionInterval(0, 1);
-        assertEquals("Host,Risk,Scope,Infostealer,Work,Personal,DB rec,Latest breach,Login page,Status\n"
+        assertEquals("Host,Risk,Scope,Infostealer,Work,Host logins,DB records,Latest breach,Login page,Status\n"
                 + "b.example.com,,in,0,0,0,0,,,Checked (nothing found)\na.example.com,,in,0,0,0,0,,,Checked (nothing found)\n", model.csv(table.selectedModelRows()));
     }
 
@@ -286,7 +286,8 @@ class ResultsTableTest {
                 "In or out of Burp's target scope.",
                 "Infostealer log records that mention the host.",
                 "Breach records with work email addresses.",
-                "Breach records with credentials for the host, whoever they belong to.",
+                "Breach records with credentials for a site on this host, whoever they belong to. For a public service these"
+                        + " are its users.",
                 "Records in breached databases that mention the host, with an email or a URL.",
                 "Newest known breach date among the 10 largest breach sources. Sources without a date, infostealer logs and"
                         + " database records are not dated, so newer leaks may exist. Hover a cell for the sources.",

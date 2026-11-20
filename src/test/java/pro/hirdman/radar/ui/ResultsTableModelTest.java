@@ -56,7 +56,7 @@ class ResultsTableModelTest {
         for (int i = 0; i < m.getColumnCount(); i++) {
             names.add(m.getColumnName(i));
         }
-        assertEquals(List.of("Host", "Risk", "Scope", "Infostealer", "Work", "Personal", "DB rec", "Latest breach", "Login page", "Status"), names);
+        assertEquals(List.of("Host", "Risk", "Scope", "Infostealer", "Work", "Host logins", "DB records", "Latest breach", "Login page", "Status"), names);
     }
 
     @Test
@@ -185,7 +185,7 @@ class ResultsTableModelTest {
         ResultsTableModel m = model(h -> !h.startsWith("old2"));
         assertEquals("vpn.example.com", m.rowAt(0).host());
         assertEquals(List.of("old.example.com", "old2.example.com"), m.failed());
-        assertEquals("Host,Risk,Scope,Infostealer,Work,Personal,DB rec,Latest breach,Login page,Status\n"
+        assertEquals("Host,Risk,Scope,Infostealer,Work,Host logins,DB records,Latest breach,Login page,Status\n"
                 + "vpn.example.com,High,in,12,3,40,7,,,Checked (leaks found)\n"
                 + "old2.example.com,,out,,,,,,,Check failed\n", m.csv(new int[] {0, 2}));
         store.noteLogin("vpn.example.com", new LoginPage(LoginPage.Kind.KNOWN_PATH, "FortiGate SSL VPN", "/remote/login"));
