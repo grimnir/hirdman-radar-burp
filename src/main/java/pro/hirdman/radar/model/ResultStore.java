@@ -7,9 +7,11 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import pro.hirdman.radar.api.ServerEvent.Check;
@@ -19,6 +21,8 @@ import pro.hirdman.radar.menu.ParentDomains;
 public final class ResultStore {
 
     private final Map<String, HostResult> rows = new LinkedHashMap<>();
+    /** The same rows for {@link #peek}: written under the lock, read without it. */
+    private final Map<String, HostResult> index = new ConcurrentHashMap<>();
     /** Hosts of each domain in store order, so a domain's rows are found without walking all of them. */
     private final Map<String, Set<String>> byDomain = new HashMap<>();
     private final List<Runnable> listeners = new CopyOnWriteArrayList<>();
@@ -112,8 +116,14 @@ public final class ResultStore {
             return HostResult.withoutCounts(host, domain, HostStatus.NOT_CHECKED, now);
         }
         HostStatus status = e.findings().isEmpty() ? HostStatus.CLEAN : HostStatus.CHECKED;
-        return new HostResult(host, domain, status, e.stealerCount(), e.hcCorpFound(), e.hcOriginFound(),
-                e.dbEmailCount() + e.dbUrlCount(), e.findings(), now, e.breachSources());
+        return new HostResult(host, domain, status, Math.max(0, e.stealerCount()), Math.max(0, e.hcCorpFound()),
+                Math.max(0, e.hcOriginFound()), sum(e.dbEmailCount(), e.dbUrlCount()), e.findings(), now, e.breachSources());
+    }
+
+    /** Server counts are never negative here, and a sum too big for a long stops at the top. */
+    private static long sum(long a, long b) {
+        long s = Math.max(0, a) + Math.max(0, b);
+        return s < 0 ? Long.MAX_VALUE : s;
     }
 
     public void remove(Collection<String> hosts) {
@@ -140,6 +150,22 @@ public final class ResultStore {
         synchronized (this) {
             return Optional.ofNullable(rows.get(h.get()));
         }
+    }
+
+    /**
+     * For Burp's traffic threads: no lock and no regex. The name is only lower-cased and stripped of a trailing dot, so
+     * anything odd simply finds no row.
+     */
+    public Optional<HostResult> peek(String host) {
+        if (host == null) {
+            return Optional.empty();
+        }
+        HostResult r = index.get(host);
+        if (r == null) {
+            String h = host.toLowerCase(Locale.ROOT);
+            r = index.get(h.endsWith(".") ? h.substring(0, h.length() - 1) : h);
+        }
+        return Optional.ofNullable(r);
     }
 
     /** When the host was last checked successfully; empty for found hosts and failed checks. */
@@ -175,6 +201,7 @@ public final class ResultStore {
             drop(row.host());
         }
         rows.put(row.host(), row);
+        index.put(row.host(), row);
         byDomain.computeIfAbsent(row.domain(), d -> new LinkedHashSet<>()).add(row.host());
     }
 
@@ -184,6 +211,7 @@ public final class ResultStore {
         if (gone == null) {
             return false;
         }
+        index.remove(host);
         Set<String> hosts = byDomain.get(gone.domain());
         if (hosts != null && hosts.remove(host) && hosts.isEmpty()) {
             byDomain.remove(gone.domain());

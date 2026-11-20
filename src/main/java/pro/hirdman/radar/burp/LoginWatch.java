@@ -42,7 +42,7 @@ public final class LoginWatch implements Consumer<HttpResponseReceived> {
             return;
         }
         String host = request.httpService().host();
-        Optional<HostResult> row = store.host(host);
+        Optional<HostResult> row = store.peek(host);
         if (row.isEmpty()) {
             return;
         }
@@ -52,9 +52,15 @@ public final class LoginWatch implements Consumer<HttpResponseReceived> {
         }
         int status = response.statusCode();
         LoginPage.detect(request.pathWithoutQuery(), status, status == 401 ? response.headerValue("WWW-Authenticate") : null,
-                        () -> known == null && response.mimeType() == MimeType.HTML && withinBudget(row.get().host())
-                                && passwordField(response))
+                        () -> known == null && budgetLeft(row.get().host()) && response.mimeType() == MimeType.HTML
+                                && withinBudget(row.get().host()) && passwordField(response))
                 .ifPresent(p -> store.noteLogin(host, p));
+    }
+
+    /** Whether the host still has body reads left; does not use one up. */
+    private boolean budgetLeft(String host) {
+        AtomicInteger scanned = scans.get(host);
+        return scanned == null || scanned.get() < SCANS_PER_HOST;
     }
 
     /** Counts one more body read on the host, up to the budget, and says whether this one is still within it. */
