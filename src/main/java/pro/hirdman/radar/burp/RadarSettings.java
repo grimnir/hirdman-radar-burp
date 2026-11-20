@@ -99,7 +99,13 @@ public final class RadarSettings {
     /** The value saved under the setting's old label, or {@code fallback}. */
     private static boolean flag(UnaryOperator<String> saved, String label, boolean fallback) {
         String old = saved.apply(RENAMED.get(label));
-        return "true".equals(old) || !"false".equals(old) && fallback;
+        if ("true".equals(old)) {
+            return true;
+        }
+        if ("false".equals(old)) {
+            return false;
+        }
+        return fallback;
     }
 
     private static int attempts(UnaryOperator<String> saved, int fallback) {

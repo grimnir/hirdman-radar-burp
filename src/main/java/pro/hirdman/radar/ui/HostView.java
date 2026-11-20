@@ -66,7 +66,10 @@ public final class HostView {
             return "";
         }
         String at = AT.format(r.checkedAt()) + " UTC. ";
-        return r.replayed() ? "Checked " + ago(Duration.between(r.checkedAt(), now)) + " (saved result), " + at : "Checked " + at;
+        if (!r.replayed()) {
+            return "Checked " + at;
+        }
+        return "Checked " + ago(Duration.between(r.checkedAt(), now)) + " (saved result), " + at;
     }
 
     /** "12 min ago", "3 h ago", "4 days ago". */
