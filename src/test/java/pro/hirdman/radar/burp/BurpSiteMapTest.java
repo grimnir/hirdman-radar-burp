@@ -103,7 +103,7 @@ class BurpSiteMapTest {
             return Fakes.DEFAULT;
         });
         MontoyaApi api = fake(MontoyaApi.class, Map.of("siteMap", siteMap, "logging", logging));
-        return new BurpSiteMap(api, url -> {
+        return new BurpSiteMap(api, url -> inScope.test(url), url -> {
             urls.add(url);
             return fake(HttpRequestResponse.class, Map.of());
         }, wanted -> {
@@ -116,6 +116,7 @@ class BurpSiteMapTest {
     }
 
     java.util.concurrent.Executor executor = Runnable::run;
+    java.util.function.Predicate<String> inScope = url -> true;
     Runnable duringWalk = () -> { };
 
     @Test
@@ -151,7 +152,49 @@ class BurpSiteMapTest {
         BurpSiteMap map = new BurpSiteMap(fake(MontoyaApi.class, Map.of()), tasks::add);
         map.addFound(List.of("a.example.com"));
         assertEquals(List.of(), tasks);
-        assertEquals(java.time.Duration.ofSeconds(10), BurpSiteMap.GATHER);
+        assertEquals(java.time.Duration.ofSeconds(30), BurpSiteMap.GATHER);
+    }
+
+    @Test
+    void foundHostsOutOfScopeStayOutOfTheSiteMap() {
+        // A Scan started on a site map branch would reach every host in it, in scope or not.
+        inScope = url -> url.equals("https://a.example.com/");
+        siteMap().addFound(List.of("a.example.com", "b.example.com"));
+        assertEquals(List.of("https://a.example.com/"), urls);
+        assertEquals(List.of("[https://a.example.com/]"), lookups);
+    }
+
+    @Test
+    void nothingInScopeMeansNoWalk() {
+        inScope = url -> false;
+        siteMap().addFound(List.of("a.example.com"));
+        assertEquals(List.of(), lookups);
+    }
+
+    @Test
+    void aHostOutOfScopeIsTakenOnceItIsInScope() {
+        inScope = url -> false;
+        BurpSiteMap s = siteMap();
+        s.addFound(List.of("a.example.com"));
+        inScope = url -> true;
+        s.addFound(List.of("a.example.com"));
+        assertEquals(List.of("https://a.example.com/"), urls);
+    }
+
+    @Test
+    void aScopeErrorCountsAsOutOfScope() {
+        inScope = url -> {
+            throw new IllegalStateException("scope broke");
+        };
+        siteMap().addFound(List.of("a.example.com"));
+        assertEquals(List.of(), urls);
+        assertEquals(List.of(), errors);
+    }
+
+    @Test
+    void addSelectedIgnoresScope() {
+        inScope = url -> false;
+        assertEquals("Hirdman Radar: added 1 host to the site map", siteMap().addSelected(List.of("a.example.com")));
     }
 
     @Test

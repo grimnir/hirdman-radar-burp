@@ -16,6 +16,7 @@ import pro.hirdman.radar.burp.BurpThread;
 import pro.hirdman.radar.burp.BurpTransport;
 import pro.hirdman.radar.burp.LoginWatch;
 import pro.hirdman.radar.burp.ProjectStore;
+import pro.hirdman.radar.burp.ProxyHighlight;
 import pro.hirdman.radar.burp.RadarEditor;
 import pro.hirdman.radar.burp.RadarMenu;
 import pro.hirdman.radar.burp.RadarSettings;
@@ -67,6 +68,10 @@ public final class HirdmanRadar implements BurpExtension {
             if (t != null) {
                 t.jobsChanged();
             }
+            // Results cost the hourly limit: a finished job is saved at once, not on the next 30 s tick.
+            if (job.state().finished()) {
+                project.saveNow();
+            }
         });
 
         BurpIssues issues = new BurpIssues(api, () -> settings.snapshot().issueOptions());
@@ -107,6 +112,7 @@ public final class HirdmanRadar implements BurpExtension {
         });
         TrafficWatcher traffic = new TrafficWatcher(batcher, settings::watchTraffic, queue, log::logToError, new LoginWatch(store));
         api.http().registerHttpHandler(traffic);
+        api.proxy().registerResponseHandler(new ProxyHighlight(store, settings::highlightProxy, log::logToError));
         traffic.start();
         project.start();
 

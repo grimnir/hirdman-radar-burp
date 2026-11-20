@@ -102,7 +102,7 @@ class RadarSettingsTest {
     void labelsAreTheSpecWording() {
         assertEquals(List.of("Server URL", VERIFY_TLS, "Create issues automatically", "Include out-of-scope hosts", "Lowest severity to report",
                 "Add discovered subdomains to the site map (unrequested items)", TRAFFIC,
-                "Re-check hosts that could not be checked (once, after 2 min)", "Attempts when the server is unavailable",
+                "Highlight hosts with leaks in Proxy history", "Re-check hosts that could not be checked (once, after 2 min)", "Attempts when the server is unavailable",
                 "Always rescan (ignore the server's 30-minute cache)"), RadarSettings.LABELS);
         assertEquals(List.of("High", "Medium", "Low"), RadarSettings.SEVERITIES);
     }
@@ -120,6 +120,10 @@ class RadarSettingsTest {
         assertEquals(true, RadarSettings.verifyTls(data));
         values.put(VERIFY_TLS, false);
         assertEquals(false, RadarSettings.verifyTls(data));
+        values.put("Highlight hosts with leaks in Proxy history", false);
+        assertEquals(false, RadarSettings.highlightProxy(data));
+        values.put("Highlight hosts with leaks in Proxy history", true);
+        assertEquals(true, RadarSettings.highlightProxy(data));
     }
 
     @Test

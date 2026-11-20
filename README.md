@@ -82,7 +82,7 @@ The search runs on the HIRDMAN server, and Burp gets the finished list.
 | Issues | Hosts with leaks get issues at `https://<host>/`, one per kind of finding, with *Tentative* confidence, because no analyst has verified the numbers |
 | Message editor | Requests to a host from the plugin's table get a read-only *Hirdman Radar* tab with that host's counts |
 | *Check in-scope hosts* | Sends the in-scope hosts from the site map for a check, after you confirm |
-| Site map | Discovered subdomains appear there as unrequested items (you can turn this off in the settings), and you can add selected rows by hand |
+| Site map | Discovered subdomains that are in scope appear there as unrequested items (you can turn this off in the settings), and you can add any selected rows by hand |
 | Login pages | A form with a password field, HTTP authentication and known paths (FortiGate, Cisco, Ivanti and GlobalProtect VPN gateways, Citrix Gateway, plus Outlook on the web, AD FS and Keycloak) are marked from responses Burp has already received. The plugin itself never contacts the hosts |
 | Burp project | Results (numbers only) are saved in the project and stay visible after a restart, offline too |
 
@@ -158,7 +158,9 @@ against local fakes and never reach the internet.
 
 *Settings > Extensions > Hirdman Radar*: Server URL and TLS verification; issues
 (create automatically, out-of-scope hosts, lowest severity); site map items for
-discovered subdomains; checking hosts from traffic; one re-check of hosts that
+discovered subdomains; checking hosts from traffic; highlighting hosts with
+leaks in Proxy history (off by default, see the
+[filter for those items](docs/proxy-filter.bambda.md)); one re-check of hosts that
 could not be checked; the number of attempts when the server is unavailable;
 *Always rescan*.
 

@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,12 @@ public final class ResultsJson {
     static final int VERSION = 2;
     static final String UNREADABLE = "Hirdman Radar: saved results could not be read, starting empty";
     static final String NEWER = "Hirdman Radar: saved results are from a newer plugin, starting empty";
+    /** One saved block past this many characters is not parsed: a project file can come from anyone. */
+    static final int MAX_CHARS = 64 * 1024 * 1024;
+    /** Rows a project loads in all; far more than any scan gives. */
+    static final int MAX_ROWS = 100_000;
+    /** The longest string a saved row may hold; issue texts are cut well below it. */
+    static final int MAX_STRING = 20_000;
 
     private record SavedFinding(String kind, String severity, String confidence, String name, String detail,
             JsonElement background, JsonElement remediation) {
@@ -45,9 +52,13 @@ public final class ResultsJson {
     }
 
     public static String write(ResultStore store) {
+        return write(store.all());
+    }
+
+    public static String write(Collection<HostResult> rows) {
         Map<String, Integer> texts = new LinkedHashMap<>();
         List<Row> hosts = new ArrayList<>();
-        for (HostResult r : store.all()) {
+        for (HostResult r : rows) {
             List<SavedFinding> findings = r.findings().stream().map(f -> new SavedFinding(f.kind(), f.severity(),
                     f.confidence(), f.name(), f.detail(), number(texts, f.background()), number(texts, f.remediation()))).toList();
             hosts.add(new Row(r.host(), r.domain(), r.status().name(), r.stealer(), r.work(), r.personal(), r.dbRecords(),
@@ -64,39 +75,75 @@ public final class ResultsJson {
     /** Never throws: unreadable data gives an empty store and one line in {@code errors}. */
     public static ResultStore read(String json, Consumer<String> errors) {
         ResultStore store = new ResultStore();
+        readInto(store, json, errors);
+        return store;
+    }
+
+    /** Adds the saved rows to {@code store}, up to {@link #MAX_ROWS} in the store. Never throws; problems go to {@code errors}. */
+    public static void readInto(ResultStore store, String json, Consumer<String> errors) {
+        readInto(store, json, errors, MAX_CHARS, MAX_ROWS);
+    }
+
+    static void readInto(ResultStore store, String json, Consumer<String> errors, int maxChars, int maxRows) {
         if (json == null || json.isBlank()) {
-            return store;
+            return;
+        }
+        if (json.length() > maxChars) {
+            errors.accept("Hirdman Radar: saved results are too large to load (" + json.length() + " characters), starting empty");
+            return;
         }
         JsonObject root = object(json);
         if (root == null) {
             errors.accept(UNREADABLE);
-            return store;
+            return;
         }
         int version = index(root.get("v"));
         if (version > VERSION) {
             errors.accept(NEWER);
-            return store;
+            return;
         }
         if (version < 1 || !(root.get("hosts") instanceof JsonArray rows)) {
             errors.accept(UNREADABLE);
-            return store;
+            return;
         }
         List<String> texts = root.get("texts") instanceof JsonArray a
-                ? a.asList().stream().map(e -> e instanceof JsonPrimitive p && p.isString() ? p.getAsString() : null).toList()
+                ? a.asList().stream().map(e -> e instanceof JsonPrimitive p && p.isString() && p.getAsString().length() <= MAX_STRING
+                        ? p.getAsString() : null).toList()
                 : List.of();
         int skipped = 0;
+        int room = maxRows - store.size();
+        boolean full = false;
         for (JsonElement el : rows) {
-            Optional<HostResult> row = row(el, texts);
-            if (row.isPresent()) {
-                store.put(row.get());
-            } else {
+            Optional<HostResult> row = tooLong(el) ? Optional.empty() : row(el, texts);
+            if (row.isEmpty()) {
                 skipped++;
+            } else if (room <= 0) {
+                full = true;
+                break;
+            } else {
+                store.put(row.get());
+                room--;
             }
         }
         if (skipped > 0) {
             errors.accept("Hirdman Radar: skipped " + skipped + " saved rows that could not be read");
         }
-        return store;
+        if (full) {
+            errors.accept("Hirdman Radar: the project holds more saved rows than the plugin loads (" + maxRows
+                    + "), the rest were left out");
+        }
+    }
+
+    /** Whether any string in the saved row is longer than {@link #MAX_STRING}. */
+    private static boolean tooLong(JsonElement el) {
+        if (el instanceof JsonPrimitive p) {
+            return p.isString() && p.getAsString().length() > MAX_STRING;
+        }
+        if (el instanceof JsonArray a) {
+            return a.asList().stream().anyMatch(ResultsJson::tooLong);
+        }
+        return el instanceof JsonObject o && o.entrySet().stream()
+                .anyMatch(e -> e.getKey().length() > MAX_STRING || tooLong(e.getValue()));
     }
 
     /** The top-level JSON object, or null for anything else. */

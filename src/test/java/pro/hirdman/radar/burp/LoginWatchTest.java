@@ -26,6 +26,7 @@ class LoginWatchTest {
     final LoginWatch watch = new LoginWatch(store);
     final AtomicInteger bodyReads = new AtomicInteger();
     final AtomicInteger regexScans = new AtomicInteger();
+    final AtomicInteger mimeReads = new AtomicInteger();
     /** The message length Burp reports, when the test needs it larger than the text. */
     Integer length;
 
@@ -55,8 +56,12 @@ class LoginWatchTest {
             default -> Fakes.DEFAULT;
         });
         Map<String, Object> answers = new HashMap<>(Map.of("initiatingRequest", request, "statusCode", (short) status,
-                "mimeType", mime, "bodyOffset", head.length()));
+                "bodyOffset", head.length()));
         return fake(HttpResponseReceived.class, (m, a) -> switch (m) {
+            case "mimeType" -> {
+                mimeReads.incrementAndGet();
+                yield mime;
+            }
             case "headerValue" -> "WWW-Authenticate".equalsIgnoreCase((String) a[0]) ? auth
                     : "Content-Length".equalsIgnoreCase((String) a[0]) ? contentLength : null;
             case "toByteArray" -> {
@@ -156,5 +161,41 @@ class LoginWatchTest {
         assertNull(login("a.example.com"));
         watch.accept(response("b.example.com", "/x", 200, null, MimeType.HTML, "<input type=password>"));
         assertEquals("Password form", login("b.example.com").label());
+    }
+
+    @Test
+    void aHostOverItsBudgetIsNotAskedForItsMimeType() {
+        store.found("example.com", List.of("a.example.com"));
+        for (int i = 0; i < LoginWatch.SCANS_PER_HOST; i++) {
+            watch.accept(response("a.example.com", "/p" + i, 200, null, MimeType.HTML, "<p>no form</p>"));
+        }
+        int before = mimeReads.get();
+        watch.accept(response("a.example.com", "/y", 200, null, MimeType.HTML, "<p>no form</p>"));
+        assertEquals(before, mimeReads.get());
+    }
+
+    @Test
+    void nonHtmlResponsesDoNotUseTheBudget() {
+        store.found("example.com", List.of("a.example.com"));
+        for (int i = 0; i < LoginWatch.SCANS_PER_HOST + 5; i++) {
+            watch.accept(response("a.example.com", "/s" + i + ".js", 200, null, MimeType.SCRIPT, "x"));
+        }
+        watch.accept(response("a.example.com", "/login", 200, null, MimeType.HTML, "<input type=password>"));
+        assertEquals("Password form", login("a.example.com").label());
+    }
+
+    @Test
+    void aResponseIsReadWhileTheStoreIsLocked() throws Exception {
+        store.found("example.com", List.of("a.example.com"));
+        java.util.concurrent.ExecutorService other = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            synchronized (store) {
+                // Nothing to note: the watch only reads and must not wait for the lock.
+                other.submit(() -> watch.accept(response("a.example.com", "/", 200, null, MimeType.JSON, "")))
+                        .get(2, java.util.concurrent.TimeUnit.SECONDS);
+            }
+        } finally {
+            other.shutdownNow();
+        }
     }
 }

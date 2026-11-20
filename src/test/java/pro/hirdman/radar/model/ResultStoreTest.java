@@ -49,6 +49,52 @@ class ResultStoreTest {
     }
 
     @Test
+    void negativeCountsBecomeZeroAndHugeSumsStopAtTheTop() {
+        ResultStore s = new ResultStore();
+        HostResult neg = s.apply("example.com", new Check(false, "a.example.com", -3, -4, -5, -6, -7, true,
+                List.of(finding("stealer", "high"))), T1).orElseThrow();
+        assertEquals(List.of(0, 0, 0), List.of(neg.stealer(), neg.work(), neg.personal()));
+        assertEquals(0, neg.dbRecords());
+        HostResult huge = s.apply("example.com", new Check(false, "b.example.com", 1, 1, Long.MAX_VALUE, Long.MAX_VALUE, 1, true,
+                List.of(finding("stealer", "high"))), T1).orElseThrow();
+        assertEquals(Long.MAX_VALUE, huge.dbRecords());
+    }
+
+    @Test
+    void domainListenersHearWhichDomainsChanged() {
+        ResultStore s = new ResultStore();
+        List<java.util.Set<String>> heard = new java.util.ArrayList<>();
+        s.addDomainListener(heard::add);
+        s.found("example.com", List.of("a.example.com"));
+        s.apply("other.org", check("x.other.org", true, 0), T1);
+        s.noteLogin("a.example.com", FORM);
+        s.remove(List.of("a.example.com", "x.other.org"));
+        s.remove(List.of("gone.example.com"));
+        assertEquals(List.of(java.util.Set.of("example.com"), java.util.Set.of("other.org"), java.util.Set.of("example.com"),
+                java.util.Set.of("example.com", "other.org")), heard);
+    }
+
+    @Test
+    void peekReadsARowWithoutTheLock() throws Exception {
+        ResultStore s = new ResultStore();
+        s.found("example.com", List.of("vpn.example.com"));
+        java.util.concurrent.ExecutorService other = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            synchronized (s) {
+                assertEquals("vpn.example.com", other.submit(() -> s.peek("VPN.Example.COM").orElseThrow().host())
+                        .get(2, java.util.concurrent.TimeUnit.SECONDS));
+            }
+        } finally {
+            other.shutdownNow();
+        }
+        assertTrue(s.peek("vpn.example.com.").isPresent());
+        assertTrue(s.peek("other.example.com").isEmpty());
+        assertTrue(s.peek(null).isEmpty());
+        s.remove(List.of("vpn.example.com"));
+        assertTrue(s.peek("vpn.example.com").isEmpty());
+    }
+
+    @Test
     void checkedHostKeepsCountsAndFindings() {
         ResultStore s = new ResultStore();
         HostResult r = s.apply("example.com", check("vpn.example.com", true, 12, finding("stealer_logs", "high")), T1).orElseThrow();

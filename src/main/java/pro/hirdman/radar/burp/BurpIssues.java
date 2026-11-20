@@ -4,6 +4,7 @@ import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.scanner.audit.issues.AuditIssue;
 import burp.api.montoya.scanner.audit.issues.AuditIssueConfidence;
 import burp.api.montoya.scanner.audit.issues.AuditIssueSeverity;
+import burp.api.montoya.sitemap.SiteMapFilter;
 import java.net.URI;
 import java.util.HashSet;
 import java.util.List;
@@ -24,17 +25,19 @@ public final class BurpIssues {
 
     private final MontoyaApi api;
     private final Supplier<IssueOptions> options;
-    private final Supplier<List<AuditIssue>> existing;
+    /** Burp's issues under a base URL. */
+    private final Function<String, List<AuditIssue>> existing;
     private final Function<IssueSpec, AuditIssue> toIssue;
     private final Set<String> reported = new HashSet<>();
-    private boolean looked;
+    /** Base URLs whose issues in Burp were read this session. */
+    private final Set<String> looked = new HashSet<>();
 
     public BurpIssues(MontoyaApi api, Supplier<IssueOptions> options) {
-        this(api, options, () -> api.siteMap().issues(), BurpIssues::toIssue);
+        this(api, options, baseUrl -> api.siteMap().issues(SiteMapFilter.prefixFilter(baseUrl)), BurpIssues::toIssue);
     }
 
     /** Burp's factories work only inside Burp, so tests pass their own. */
-    BurpIssues(MontoyaApi api, Supplier<IssueOptions> options, Supplier<List<AuditIssue>> existing,
+    BurpIssues(MontoyaApi api, Supplier<IssueOptions> options, Function<String, List<AuditIssue>> existing,
             Function<IssueSpec, AuditIssue> toIssue) {
         this.api = api;
         this.options = options;
@@ -56,10 +59,10 @@ public final class BurpIssues {
             if (specs.isEmpty()) {
                 return 0;
             }
-            // Burp's lookup walks every issue of the project, so it runs once a session, and again after reportAgain.
-            if (!looked) {
-                existing.get().forEach(i -> key(i).ifPresent(reported::add));
-                looked = true;
+            // Only this host's issues are read, once a session and again after reportAgain.
+            if (!looked.contains(baseUrl)) {
+                existing.apply(baseUrl).forEach(i -> key(i).ifPresent(reported::add));
+                looked.add(baseUrl);
                 specs = specs.stream().filter(s -> !reported.contains(s.key())).toList();
             }
         } catch (RuntimeException e) {
@@ -97,7 +100,7 @@ public final class BurpIssues {
     /** The row menu's action: goes by what Burp has now, so issues deleted there are created again. */
     public synchronized int reportAgain(List<HostResult> rows) {
         reported.clear();
-        looked = false;
+        looked.clear();
         return reportAll(rows);
     }
 

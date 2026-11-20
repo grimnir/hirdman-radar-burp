@@ -29,11 +29,12 @@ public final class RadarSettings {
     static final String SITE_MAP = "Add discovered subdomains to the site map (unrequested items)";
     static final String TRAFFIC =
             "Check new hosts seen in traffic (in scope only, batched every 60 s, skip hosts checked in the last 24 h)";
+    static final String HIGHLIGHT = "Highlight hosts with leaks in Proxy history";
     static final String RECHECK = "Re-check hosts that could not be checked (once, after 2 min)";
     static final String ATTEMPTS = "Attempts when the server is unavailable";
     static final String ALWAYS_RESCAN = "Always rescan (ignore the server's 30-minute cache)";
-    static final List<String> LABELS = List.of(SERVER_URL, VERIFY_TLS, AUTO_ISSUES, OUT_OF_SCOPE, LOWEST, SITE_MAP, TRAFFIC, RECHECK, ATTEMPTS,
-            ALWAYS_RESCAN);
+    static final List<String> LABELS = List.of(SERVER_URL, VERIFY_TLS, AUTO_ISSUES, OUT_OF_SCOPE, LOWEST, SITE_MAP, TRAFFIC, HIGHLIGHT, RECHECK,
+            ATTEMPTS, ALWAYS_RESCAN);
     private static final List<Risk> LEVELS = List.of(Risk.HIGH, Risk.MEDIUM, Risk.LOW);
     static final List<String> SEVERITIES = LEVELS.stream().map(Risk::label).toList();
 
@@ -55,6 +56,7 @@ public final class RadarSettings {
                         listSetting(LOWEST, SEVERITIES, d.lowest().label()),
                         booleanSetting(SITE_MAP, d.addToSiteMap()),
                         booleanSetting(TRAFFIC, d.watchTraffic()),
+                        booleanSetting(HIGHLIGHT, false),
                         booleanSetting(RECHECK, d.recheckNotChecked()),
                         integerSetting(ATTEMPTS, d.attempts()),
                         booleanSetting(ALWAYS_RESCAN, d.alwaysRescan()))
@@ -67,9 +69,14 @@ public final class RadarSettings {
         return read(panel, offForProject.getAsBoolean());
     }
 
-    /** Read on every request Burp sends, so only this one setting. */
+    /** Read on the request path (at most once a second), so only this one setting. */
     public boolean watchTraffic() {
         return watchTraffic(panel, offForProject.getAsBoolean());
+    }
+
+    /** Read on Proxy responses through a cache. Local only: the colour and note come from the table in memory. */
+    public boolean highlightProxy() {
+        return highlightProxy(panel);
     }
 
     public String serverUrl() {
@@ -83,6 +90,10 @@ public final class RadarSettings {
 
     static boolean watchTraffic(SettingData data, boolean offForProject) {
         return !offForProject && data.getBoolean(TRAFFIC);
+    }
+
+    static boolean highlightProxy(SettingData data) {
+        return data.getBoolean(HIGHLIGHT);
     }
 
     static boolean verifyTls(SettingData data) {

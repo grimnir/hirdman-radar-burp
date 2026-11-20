@@ -10,9 +10,11 @@ import burp.api.montoya.ui.contextmenu.ContextMenuEvent;
 import burp.api.montoya.ui.contextmenu.ContextMenuItemsProvider;
 import java.awt.Component;
 import java.awt.Container;
-import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 import javax.swing.JMenu;
 import javax.swing.JMenuItem;
@@ -24,6 +26,9 @@ import pro.hirdman.radar.ui.SendConfirm;
 
 /** Extensions > Hirdman Radar in Burp's context menus. Items only queue jobs: no network here, no focus change. */
 public final class RadarMenu implements ContextMenuItemsProvider {
+
+    /** Distinct hosts taken from a selection; the menu is built on the EDT, and Proxy history can select 50,000 rows. */
+    static final int MAX_HOSTS = 1000;
 
     private final JobQueue queue;
     private final Component tab;
@@ -43,12 +48,19 @@ public final class RadarMenu implements ContextMenuItemsProvider {
 
     @Override
     public List<Component> provideMenuItems(ContextMenuEvent event) {
-        List<String> hosts = new ArrayList<>();
-        event.selectedRequestResponses().forEach(rr -> addHost(hosts, rr));
-        event.messageEditorRequestResponse().ifPresent(m -> addHost(hosts, m.requestResponse()));
-        if (hosts.isEmpty()) {
+        // Raw names are de-duplicated first, so each distinct one is normalized once.
+        Set<String> raw = new LinkedHashSet<>();
+        for (HttpRequestResponse rr : event.selectedRequestResponses()) {
+            if (raw.size() >= MAX_HOSTS) {
+                break;
+            }
+            addHost(raw, rr);
+        }
+        event.messageEditorRequestResponse().ifPresent(m -> addHost(raw, m.requestResponse()));
+        if (raw.isEmpty()) {
             return List.of();
         }
+        List<String> hosts = List.copyOf(raw);
         MenuModel model = MenuModel.of(hosts);
         JMenu root = menu("Hirdman Radar");
         if (!model.findDomains().isEmpty()) {
@@ -66,15 +78,14 @@ public final class RadarMenu implements ContextMenuItemsProvider {
             }));
             root.addSeparator();
         }
-        List<String> picked = List.copyOf(hosts);
         root.add(item("Show in Hirdman Radar tab", () -> {
-            reveal.accept(picked);
+            reveal.accept(hosts);
             showTab();
         }));
         return List.of(root);
     }
 
-    private static void addHost(List<String> hosts, HttpRequestResponse rr) {
+    private static void addHost(Collection<String> hosts, HttpRequestResponse rr) {
         Optional.ofNullable(rr).map(HttpRequestResponse::request).map(HttpRequest::httpService).map(HttpService::host)
                 .ifPresent(hosts::add);
     }

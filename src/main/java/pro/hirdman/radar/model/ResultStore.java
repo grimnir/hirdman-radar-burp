@@ -7,9 +7,11 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import pro.hirdman.radar.api.ServerEvent.Check;
@@ -19,15 +21,23 @@ import pro.hirdman.radar.menu.ParentDomains;
 public final class ResultStore {
 
     private final Map<String, HostResult> rows = new LinkedHashMap<>();
+    /** The same rows for {@link #peek}: written under the lock, read without it. */
+    private final Map<String, HostResult> index = new ConcurrentHashMap<>();
     /** Hosts of each domain in store order, so a domain's rows are found without walking all of them. */
     private final Map<String, Set<String>> byDomain = new HashMap<>();
     private final List<Runnable> listeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<HostResult>> checkListeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<List<String>>> foundListeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<HostResult>> loginListeners = new CopyOnWriteArrayList<>();
+    private final List<Consumer<Set<String>>> domainListeners = new CopyOnWriteArrayList<>();
 
     public void addListener(Runnable onChange) {
         listeners.add(onChange);
+    }
+
+    /** Gets the domains whose rows a change touched, on every change {@link #addListener} hears. */
+    public void addDomainListener(Consumer<Set<String>> onChange) {
+        domainListeners.add(onChange);
     }
 
     /** Gets every row a check writes. */
@@ -60,7 +70,7 @@ public final class ResultStore {
             row = old.withLogin(page);
             store(row);
         }
-        fire();
+        fire(Set.of(row.domain()));
         loginListeners.forEach(l -> l.accept(row));
         return true;
     }
@@ -82,7 +92,7 @@ public final class ResultStore {
             }
         }
         if (!added.isEmpty()) {
-            fire();
+            fire(Set.of(d.get()));
             List<String> found = List.copyOf(added);
             foundListeners.forEach(l -> l.accept(found));
         }
@@ -102,7 +112,7 @@ public final class ResultStore {
             row = old == null || old.login() == null ? fresh : fresh.withLogin(old.login());
             store(row);
         }
-        fire();
+        fire(Set.of(row.domain()));
         checkListeners.forEach(l -> l.accept(row));
         return Optional.of(row);
     }
@@ -112,22 +122,25 @@ public final class ResultStore {
             return HostResult.withoutCounts(host, domain, HostStatus.NOT_CHECKED, now);
         }
         HostStatus status = e.findings().isEmpty() ? HostStatus.CLEAN : HostStatus.CHECKED;
-        return new HostResult(host, domain, status, e.stealerCount(), e.hcCorpFound(), e.hcOriginFound(),
-                e.dbEmailCount() + e.dbUrlCount(), e.findings(), now, e.breachSources());
+        return new HostResult(host, domain, status, Math.max(0, e.stealerCount()), Math.max(0, e.hcCorpFound()),
+                Math.max(0, e.hcOriginFound()), sum(e.dbEmailCount(), e.dbUrlCount()), e.findings(), now, e.breachSources());
+    }
+
+    /** Server counts are never negative here, and a sum too big for a long stops at the top. */
+    private static long sum(long a, long b) {
+        long s = Math.max(0, a) + Math.max(0, b);
+        return s < 0 ? Long.MAX_VALUE : s;
     }
 
     public void remove(Collection<String> hosts) {
-        boolean changed = false;
+        Set<String> domains = new LinkedHashSet<>();
         synchronized (this) {
             for (String raw : hosts) {
-                Optional<String> h = HostNames.normalize(raw);
-                if (h.isPresent() && drop(h.get())) {
-                    changed = true;
-                }
+                HostNames.normalize(raw).map(this::drop).ifPresent(gone -> domains.add(gone.domain()));
             }
         }
-        if (changed) {
-            fire();
+        if (!domains.isEmpty()) {
+            fire(Set.copyOf(domains));
         }
     }
 
@@ -140,6 +153,22 @@ public final class ResultStore {
         synchronized (this) {
             return Optional.ofNullable(rows.get(h.get()));
         }
+    }
+
+    /**
+     * For Burp's traffic threads: no lock and no regex. The name is only lower-cased and stripped of a trailing dot, so
+     * anything odd simply finds no row.
+     */
+    public Optional<HostResult> peek(String host) {
+        if (host == null) {
+            return Optional.empty();
+        }
+        HostResult r = index.get(host);
+        if (r == null) {
+            String h = host.toLowerCase(Locale.ROOT);
+            r = index.get(h.endsWith(".") ? h.substring(0, h.length() - 1) : h);
+        }
+        return Optional.ofNullable(r);
     }
 
     /** When the host was last checked successfully; empty for found hosts and failed checks. */
@@ -163,6 +192,10 @@ public final class ResultStore {
         return List.copyOf(rows.values());
     }
 
+    synchronized int size() {
+        return rows.size();
+    }
+
     /** Puts a fully formed row, as loaded from the project; the caller has validated it. */
     synchronized void put(HostResult row) {
         store(row);
@@ -175,23 +208,26 @@ public final class ResultStore {
             drop(row.host());
         }
         rows.put(row.host(), row);
+        index.put(row.host(), row);
         byDomain.computeIfAbsent(row.domain(), d -> new LinkedHashSet<>()).add(row.host());
     }
 
-    /** Takes a host out of both maps under the lock; returns whether it was there. */
-    private boolean drop(String host) {
+    /** Takes a host out of both maps under the lock; returns its row, or null when it was not there. */
+    private HostResult drop(String host) {
         HostResult gone = rows.remove(host);
         if (gone == null) {
-            return false;
+            return null;
         }
+        index.remove(host);
         Set<String> hosts = byDomain.get(gone.domain());
         if (hosts != null && hosts.remove(host) && hosts.isEmpty()) {
             byDomain.remove(gone.domain());
         }
-        return true;
+        return gone;
     }
 
-    private void fire() {
+    private void fire(Set<String> domains) {
         listeners.forEach(Runnable::run);
+        domainListeners.forEach(l -> l.accept(domains));
     }
 }
