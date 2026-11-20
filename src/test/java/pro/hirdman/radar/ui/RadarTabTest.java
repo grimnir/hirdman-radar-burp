@@ -17,35 +17,23 @@ import burp.api.montoya.scope.ScopeChangeHandler;
 import burp.api.montoya.ui.UserInterface;
 import java.awt.Component;
 import java.awt.event.KeyEvent;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.IntStream;
 import javax.swing.JMenuItem;
 import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import pro.hirdman.radar.api.ApiException;
-import pro.hirdman.radar.api.JobPage;
-import pro.hirdman.radar.api.JobRequest;
 import pro.hirdman.radar.api.Meta;
-import pro.hirdman.radar.api.Radar;
 import pro.hirdman.radar.api.ServerEvent.Check;
 import pro.hirdman.radar.api.ServerEvent.Finding;
-import pro.hirdman.radar.api.SubdomainList;
 import pro.hirdman.radar.config.Options;
 import pro.hirdman.radar.config.ProjectSwitch;
 import pro.hirdman.radar.jobs.Job;
@@ -62,9 +50,7 @@ class RadarTabTest {
 
     static final String EMPTY = "No results yet. Enter a domain above, or right-click a host in Target, Proxy or Repeater "
             + "and choose Extensions > Hirdman Radar.";
-    static final String LIMITS = "Without a key: up to 50 hosts per check and 300 hosts per hour from your address.";
-    static final Meta META = new Meta(1, "0.1.0", "anonymous", new Meta.Limits(50, 1.5, 300),
-            new Meta.Notes("db", "cov", "Counts only, from the server."));
+    static final Meta META = TestRadar.META;
 
     final ResultStore store = new ResultStore();
     final MetaGate gate = new MetaGate();
@@ -103,11 +89,8 @@ class RadarTabTest {
         }
         default -> pro.hirdman.radar.burp.Fakes.DEFAULT;
     }));
-    final AtomicInteger metaCalls = new AtomicInteger();
-    final AtomicReference<Object> metaAnswer = new AtomicReference<>(META);
     final Map<String, Boolean> prefs = new HashMap<>();
     final List<String> scopeHosts = new ArrayList<>();
-    final AtomicInteger walks = new AtomicInteger();
 
     final MontoyaApi api = fake(MontoyaApi.class, Map.of(
             "userInterface", fake(UserInterface.class, Map.of()),
@@ -141,40 +124,7 @@ class RadarTabTest {
                 return pro.hirdman.radar.burp.Fakes.DEFAULT;
             })));
 
-    final Radar radar = new Radar() {
-        @Override
-        public Meta meta() throws ApiException {
-            metaCalls.incrementAndGet();
-            Object a = metaAnswer.get();
-            if (a instanceof ApiException e) {
-                throw e;
-            }
-            if (a instanceof RuntimeException e) {
-                throw e;
-            }
-            return (Meta) a;
-        }
-
-        @Override
-        public SubdomainList subdomains(String domain, boolean rescan) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public String startJob(JobRequest request) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public JobPage poll(String jobId, int after) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void deleteJob(String jobId, Duration timeout) {
-            throw new UnsupportedOperationException();
-        }
-    };
+    final TestRadar radar = new TestRadar();
 
     RadarTab tab;
 
@@ -202,7 +152,6 @@ class RadarTabTest {
     }
 
     List<String> walk() {
-        walks.incrementAndGet();
         return List.copyOf(scopeHosts);
     }
 
@@ -356,74 +305,6 @@ class RadarTabTest {
         assertEquals(List.of("site map: 1"), infos);
     }
 
-    JMenuItem exportItem(String text) {
-        for (Component c : tab().exportMenu.getComponents()) {
-            if (c instanceof JMenuItem i && i.getText().equals(text)) {
-                return i;
-            }
-        }
-        throw new AssertionError("no export item " + text);
-    }
-
-    @Test
-    void exportWritesTheRowsShown(@TempDir Path dir) throws Exception {
-        checked("a.example.com", "high");
-        notChecked("b.example.com");
-        tab().flush();
-        Path out = dir.resolve("r.json");
-        List<String> asked = new ArrayList<>();
-        tab().saveDialog = name -> {
-            asked.add(name);
-            return Optional.of(out);
-        };
-        assertEquals("Export", tab().exportButton.getText());
-        exportItem("JSON...").doClick(0);
-        assertEquals(List.of("hirdman-radar-example.com.json"), asked);
-        String json = Files.readString(out);
-        assertTrue(json.contains("\"host\": \"a.example.com\""), json);
-        assertTrue(json.contains("\"host\": \"b.example.com\""), json);
-        assertTrue(json.contains("\"report_url\": \"https://scan.hirdman.pro/?domain=example.com\""), json);
-        assertEquals(List.of("Hirdman Radar: exported 2 hosts to " + out), infos);
-    }
-
-    @Test
-    void copySummaryCopiesTheWholeDomainWhateverTheFilter() {
-        checked("a.example.com", "high");
-        notChecked("b.example.com");
-        tab().flush();
-        tab().filterBox.setSelectedItem(ResultsFilter.FAILED);
-        List<String> copied = new ArrayList<>();
-        tab().clipboard = copied::add;
-        exportItem("Copy summary").doClick(0);
-        assertEquals(1, copied.size());
-        assertTrue(copied.get(0).startsWith("## Hirdman Radar: example.com\n\n2 hosts, 1 with leaks, 1 failed."), copied.get(0));
-        assertTrue(copied.get(0).contains("| a.example.com | High |"), copied.get(0));
-        assertTrue(copied.get(0).contains("https://scan.hirdman.pro/?domain=example.com"), copied.get(0));
-    }
-
-    @Test
-    void csvExportToAPlaceThatCannotBeWrittenIsLoggedAndSaid(@TempDir Path dir) throws Exception {
-        checked("a.example.com", "high");
-        tab().flush();
-        tab().saveDialog = name -> Optional.of(dir);
-        List<String> said = new ArrayList<>();
-        tab().message = said::add;
-        exportItem("CSV...").doClick(0);
-        drainEdt();
-        assertEquals(List.of(RadarTab.EXPORT_FAILED), said);
-        assertEquals(1, errors.size());
-        assertTrue(errors.get(0).startsWith("Hirdman Radar: export to " + dir + " failed: "), errors.get(0));
-    }
-
-    @Test
-    void aCancelledExportWritesNothing() {
-        checked("a.example.com", "high");
-        tab().flush();
-        tab().saveDialog = name -> Optional.empty();
-        exportItem("CSV...").doClick(0);
-        assertEquals(List.of(), infos);
-        assertEquals(List.of(), errors);
-    }
 
     @Test
     void checkSelectedAndRecheckQueueHostChecks() {
@@ -511,50 +392,6 @@ class RadarTabTest {
         Job job = queue.jobs().get(0);
         assertTrue(job.force());
         assertEquals(java.util.Set.of("a.example.com", "b.example.com"), java.util.Set.copyOf(job.hosts()));
-    }
-
-    @Test
-    void checkInScopeHostsAsksWithTheCountsThenQueues() throws Exception {
-        scopeHosts.addAll(List.of("a.example.com", "b.example.com", "c.example.com"));
-        store.apply("example.com", new Check(false, "b.example.com", 0, 0, 0, 0, 1, true, List.of()), Instant.now());
-        // hosts_left is asked afresh: the tab's /meta answer may be hours old.
-        metaAnswer.set(new Meta(1, "0.1.0", "anonymous", new Meta.Limits(50, 1.5, 300, 120), META.notes()));
-        List<String> asked = new ArrayList<>();
-        AtomicReference<Boolean> agree = new AtomicReference<>(false);
-        tab().confirm = q -> {
-            asked.add(q);
-            return agree.get();
-        };
-        tab().scopeButton.doClick(0);
-        drainEdt();
-        assertEquals(List.of("Check 2 in-scope hosts from the site map for leaks? 1 host checked in the last 24 h is skipped. "
-                + "Your address can check 120 more hosts this hour."), asked);
-        assertTrue(queue.jobs().isEmpty());
-        assertTrue(tab().scopeButton.isEnabled());
-        agree.set(true);
-        tab().scopeButton.doClick(0);
-        drainEdt();
-        assertEquals(List.of(JobKind.CHECK_HOSTS), queue.jobs().stream().map(Job::kind).toList());
-        assertEquals(List.of("a.example.com", "c.example.com"), queue.jobs().get(0).hosts());
-    }
-
-    @Test
-    void checkInScopeHostsSaysWhenThereIsNothingToSend() throws Exception {
-        List<String> said = new ArrayList<>();
-        tab().message = said::add;
-        tab().confirm = q -> {
-            throw new AssertionError(q);
-        };
-        tab().scopeButton.doClick(0);
-        drainEdt();
-        Options d = Options.defaults();
-        options.set(new Options(d.serverUrl(), true, true, Risk.LOW, true, false, true, 5, false, true));
-        tab().scopeButton.doClick(0);
-        drainEdt();
-        assertEquals(List.of("No in-scope host names in the site map.", ServerLine.OFF_FOR_PROJECT.text()), said);
-        assertEquals(1, walks.get());
-        assertEquals(0, metaCalls.get());
-        assertTrue(queue.jobs().isEmpty());
     }
 
     @Test
@@ -679,67 +516,6 @@ class RadarTabTest {
     }
 
     @Test
-    void serverCheckShowsTheLimitsAndTheNote() throws Exception {
-        assertEquals("Counts only: no accounts, passwords, raw records or dumps. Partial check, about a third of a full HIRDMAN review.",
-                tab().footerLabel.getText());
-        tab().checkServer();
-        drainEdt();
-        assertEquals(LIMITS, tab().serverLabel.getText());
-        assertFalse(tab().tryAgainButton.isVisible());
-        assertEquals("Counts only, from the server. Partial check, about a third of a full HIRDMAN review.", tab().footerLabel.getText());
-        assertEquals(META, gate.last().orElseThrow());
-    }
-
-    @Test
-    void unreachableServerOffersTryAgain() throws Exception {
-        metaAnswer.set(ApiException.unreachable(new IOException("refused")));
-        tab().checkServer();
-        drainEdt();
-        assertEquals("Cannot reach scan.hirdman.pro. The plugin needs internet access, directly or through Burp's upstream proxy. Behind a proxy that re-signs HTTPS, turn off the certificate check in Settings > Extensions > Hirdman Radar.",
-                tab().serverLabel.getText());
-        assertTrue(tab().tryAgainButton.isVisible());
-        metaAnswer.set(META);
-        tab().tryAgainButton.doClick(0);
-        drainEdt();
-        assertEquals(LIMITS, tab().serverLabel.getText());
-        assertFalse(tab().tryAgainButton.isVisible());
-    }
-
-    @Test
-    void unexpectedServerErrorIsLoggedAndOffersTryAgain() throws Exception {
-        metaAnswer.set(new IllegalStateException("boom"));
-        tab().checkServer();
-        drainEdt();
-        assertEquals("Server check failed: unexpected error. Details are in the extension's Errors tab.", tab().serverLabel.getText());
-        assertTrue(tab().tryAgainButton.isVisible());
-        assertEquals(List.of("Hirdman Radar: server check failed"), errors);
-    }
-
-    @Test
-    void theReasonOfAFailedServerCheckIsLogged() throws Exception {
-        metaAnswer.set(ApiException.malformed("no limits in /meta", null));
-        tab().checkServer();
-        drainEdt();
-        assertEquals("Server check failed: unexpected answer.", tab().serverLabel.getText());
-        assertEquals(1, errors.size(), errors.toString());
-        assertTrue(errors.get(0).startsWith("Hirdman Radar: server check failed: "), errors.get(0));
-        assertTrue(errors.get(0).contains("no limits in /meta"), errors.get(0));
-    }
-
-    @Test
-    void staleServerAnswerIsDropped() throws Exception {
-        List<Runnable> later = new ArrayList<>();
-        tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, rows -> 0, hosts -> "", this::walk, later::add);
-        metaAnswer.set(ApiException.unreachable(new IOException("refused")));
-        tab.checkServer();
-        options.set(new Options("http://bad.example", true, false, Risk.LOW, true, false, true, 5, false));
-        tab.checkServer();
-        later.get(0).run();
-        drainEdt();
-        assertEquals("Server URL must start with https://", tab.serverLabel.getText());
-    }
-
-    @Test
     void rightClickSelectsTheRowUnderThePointer() {
         checked("a.example.com", null);
         checked("b.example.com", null);
@@ -772,17 +548,6 @@ class RadarTabTest {
         assertFalse(tab().noticePanel.isVisible());
     }
 
-    @Test
-    void aProjectTurnedOffIsShownWithoutAsking() throws Exception {
-        Options d = Options.defaults();
-        options.set(new Options(d.serverUrl(), true, false, Risk.LOW, true, false, true, 5, false, true));
-        tab().checkServer();
-        drainEdt();
-        assertEquals(OFF_LINE, tab().serverLabel.getText());
-        assertTrue(tab().tryAgainButton.isVisible());
-        assertEquals(0, metaCalls.get());
-    }
-
     static final String OFF_LINE = "Private project: nothing is sent to the radar server.";
 
     @Test
@@ -797,69 +562,24 @@ class RadarTabTest {
         assertEquals(tip, tab().projectHelp.getToolTipText());
         assertFalse(tab().projectBox.isSelected());
         drainEdt();
-        int asked = metaCalls.get();
+        int asked = radar.metaCalls.get();
         tab().projectBox.doClick(0);
         drainEdt();
         assertTrue(projectSwitch.off());
         assertEquals(Map.of("hirdman.radar.off", true), projectData);
-        assertEquals(OFF_LINE, tab().serverLabel.getText());
-        assertEquals(asked, metaCalls.get());
+        assertEquals(OFF_LINE, tab().server.label.getText());
+        assertEquals(asked, radar.metaCalls.get());
         tab().projectBox.doClick(0);
         drainEdt();
         assertFalse(projectSwitch.off());
         assertEquals(Map.of("hirdman.radar.off", false), projectData);
-        assertEquals(asked + 1, metaCalls.get());
+        assertEquals(asked + 1, radar.metaCalls.get());
     }
 
     @Test
     void aProjectSavedAsOffOpensWithTheSwitchTicked() {
         projectSwitch.set(true);
         assertTrue(tab().projectBox.isSelected());
-    }
-
-    @Test
-    void turningTheProjectOffOrOnAsksAgain() throws Exception {
-        tab().watchServer();
-        drainEdt();
-        Options d = Options.defaults();
-        options.set(new Options(d.serverUrl(), true, true, Risk.LOW, true, false, true, 5, false, true));
-        tab().watchServer();
-        drainEdt();
-        assertTrue(tab().serverLabel.getText().startsWith("Private project"), tab().serverLabel.getText());
-        options.set(Options.defaults());
-        tab().watchServer();
-        drainEdt();
-        assertEquals(2, metaCalls.get());
-    }
-
-    @Test
-    void badServerUrlIsShownWithoutAsking() throws Exception {
-        options.set(new Options("http://example.com", true, false, Risk.LOW, true, false, true, 5, false));
-        tab().checkServer();
-        drainEdt();
-        assertEquals("Server URL must start with https://", tab().serverLabel.getText());
-        assertEquals(0, metaCalls.get());
-    }
-
-    @Test
-    void serverUrlChangeAsksAgain() throws Exception {
-        tab().watchServer();
-        drainEdt();
-        assertEquals(1, metaCalls.get());
-        tab().watchServer();
-        assertEquals(1, metaCalls.get());
-        options.set(new Options("https://other.example", true, false, Risk.LOW, true, false, true, 5, false));
-        tab().watchServer();
-        drainEdt();
-        assertEquals(2, metaCalls.get());
-    }
-
-    @Test
-    void metaFromAJobUpdatesTheLine() throws Exception {
-        tab();
-        gate.passed(java.net.URI.create("https://scan.hirdman.pro"), META);
-        drainEdt();
-        assertEquals(LIMITS, tab().serverLabel.getText());
     }
 
     @Test
@@ -901,8 +621,6 @@ class RadarTabTest {
         assertEquals("hirdman.pro", tab().link.getText());
         assertTrue(tab().link.isFocusable());
         assertEquals(Boolean.TRUE, tab().link.getClientProperty("html.disable"));
-        assertEquals(Boolean.TRUE, tab().serverLabel.getClientProperty("html.disable"));
-        assertEquals(Boolean.TRUE, tab().footerLabel.getClientProperty("html.disable"));
     }
 
     @Test
@@ -912,21 +630,6 @@ class RadarTabTest {
         tab().timer.start();
         tab().close();
         assertFalse(tab().timer.isRunning());
-    }
-
-    @Test
-    void aHostWhoseCheckFailedIsNotSkippedAsRecentlyChecked() throws Exception {
-        scopeHosts.addAll(List.of("a.example.com", "b.example.com"));
-        store.apply("example.com", new Check(false, "b.example.com", 0, 0, 0, 0, 0, false, List.of()), Instant.now());
-        List<String> asked = new ArrayList<>();
-        tab().confirm = q -> {
-            asked.add(q);
-            return true;
-        };
-        tab().scopeButton.doClick(0);
-        drainEdt();
-        assertTrue(asked.get(0).startsWith("Check 2 in-scope hosts from the site map for leaks?"), asked.toString());
-        assertEquals(List.of("a.example.com", "b.example.com"), queue.jobs().get(0).hosts());
     }
 
     @Test
@@ -982,15 +685,11 @@ class RadarTabTest {
     }
 
     @Test
-    void theServerLineKeepsTryAgainInViewAndItsFullTextInATip() throws Exception {
-        metaAnswer.set(ApiException.unreachable(new IOException("refused")));
-        tab().checkServer();
-        drainEdt();
-        assertEquals(tab().serverLabel.getText(), tab().serverLabel.getToolTipText());
-        java.awt.Container line = tab().serverLabel.getParent();
+    void theServerLineKeepsTryAgainInView() {
+        java.awt.Container line = tab().server.label.getParent();
         java.awt.BorderLayout layout = (java.awt.BorderLayout) line.getLayout();
-        assertTrue(layout.getLayoutComponent(java.awt.BorderLayout.WEST) == tab().tryAgainButton);
-        assertTrue(layout.getLayoutComponent(java.awt.BorderLayout.CENTER) == tab().serverLabel);
+        assertTrue(layout.getLayoutComponent(java.awt.BorderLayout.WEST) == tab().server.tryAgainButton);
+        assertTrue(layout.getLayoutComponent(java.awt.BorderLayout.CENTER) == tab().server.label);
     }
 
     @Test
@@ -1076,14 +775,14 @@ class RadarTabTest {
         drainEdt();
         assertEquals(List.of(JobKind.CHECK_HOSTS), queue.jobs().stream().map(Job::kind).toList());
         assertEquals(List.of("r0.example.com", "r1.example.com"), queue.jobs().get(0).hosts());
-        assertEquals(0, metaCalls.get());
+        assertEquals(0, radar.metaCalls.get());
     }
 
     @Test
     void manyUncheckedSubdomainsAskWithTheHourlyLimit() throws Exception {
         scannedWithRest(60);
         tab().flush();
-        metaAnswer.set(new Meta(1, "0.1.0", "anonymous", new Meta.Limits(50, 1.5, 300, 120), META.notes()));
+        radar.answer.set(new Meta(1, "0.1.0", "anonymous", new Meta.Limits(50, 1.5, 300, 120), META.notes()));
         List<String> asked = new ArrayList<>();
         tab().confirm = q -> {
             asked.add(q);

@@ -21,18 +21,11 @@ import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.io.File;
 import java.io.IOException;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executor;
@@ -44,7 +37,6 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -54,7 +46,6 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
-import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
@@ -70,14 +61,10 @@ import javax.swing.UIManager;
 import javax.swing.event.PopupMenuEvent;
 import javax.swing.event.PopupMenuListener;
 import pro.hirdman.radar.Version;
-import pro.hirdman.radar.api.ApiException;
-import pro.hirdman.radar.api.ConnectionSettings;
 import pro.hirdman.radar.api.Meta;
 import pro.hirdman.radar.api.Radar;
 import pro.hirdman.radar.config.Options;
 import pro.hirdman.radar.config.ProjectSwitch;
-import pro.hirdman.radar.export.ResultsExport;
-import pro.hirdman.radar.export.ResultsSummary;
 import pro.hirdman.radar.issues.IssuePlanner;
 import pro.hirdman.radar.jobs.Job;
 import pro.hirdman.radar.jobs.JobKind;
@@ -97,7 +84,6 @@ public final class RadarTab extends JPanel {
     static final String WORKING = "Results appear here as hosts are checked.";
     static final String RESCAN_TIP = "Scan the domain again instead of using the saved scan or the checks of the last 24 h. "
             + "Without a key, a domain can be rescanned once an hour. Unticks itself once the job is queued.";
-    static final String EXPORT_FAILED = "Could not save the export. Details are in the extension's Errors tab.";
     static final String NOT_A_DOMAIN = "Enter a domain name like example.com. IP addresses cannot be checked.";
     private static final String[] REMOVE_BUTTONS = {"Remove", "Cancel"};
     private static final Duration PERIOD = Duration.ofMillis(250);
@@ -116,14 +102,12 @@ public final class RadarTab extends JPanel {
     private final MontoyaApi api;
     private final ResultStore store;
     private final JobQueue queue;
-    private final MetaGate gate;
     private final Supplier<Options> options;
     private final ProjectSwitch projectSwitch;
-    private final Supplier<Radar> radar;
     private final ToIntFunction<List<HostResult>> report;
     private final Function<List<String>, String> addToSiteMap;
-    private final Supplier<List<String>> scopeHosts;
     private final Executor background;
+    private final TabLog log;
     private final UpdateCoalescer updates = new UpdateCoalescer(PERIOD, this::flush);
     private final Registration scopeWatch;
     final Timer timer;
@@ -136,7 +120,7 @@ public final class RadarTab extends JPanel {
     final JButton checkButton = new JButton("Check for leaks");
     final JCheckBox rescanBox = new JCheckBox("Rescan");
     final JLabel domainHint = plain(new JLabel());
-    final JButton scopeButton = new JButton("Check in-scope hosts");
+    final ScopeCheckButton scopeCheck;
     final JobsPanel jobsPanel;
     final JScrollPane jobsScroll;
     final JComboBox<String> domainBox = new JComboBox<>();
@@ -149,18 +133,13 @@ public final class RadarTab extends JPanel {
     final ResultsTableModel model;
     final ResultsTable table;
     final JLabel emptyLabel = label(EMPTY, SwingConstants.CENTER);
-    final JLabel serverLabel = plain(new JLabel());
-    final JButton tryAgainButton = new JButton("Try again");
+    final ServerStatus server;
     final JCheckBox projectBox = new JCheckBox("Private project: send nothing to the radar");
     final JLabel projectHelp = label("(?)");
-    final JLabel footerLabel = label(ServerLine.footer(null));
     final JButton link = new Link("hirdman.pro");
     final JLabel versionLabel = new Note("Hirdman Radar " + Version.current());
     final JPopupMenu rowMenu = new JPopupMenu();
-    final JButton exportButton = new JButton("Export");
-    final JPopupMenu exportMenu = new JPopupMenu();
-    /** Asks where to save the export; tests replace it. */
-    Function<String, Optional<Path>> saveDialog = this::chooseFile;
+    final ExportActions export;
     /** Puts text on the system clipboard; tests replace it. */
     Consumer<String> clipboard = this::copy;
     /** Tells the user something that needs no answer; tests replace it. */
@@ -185,9 +164,6 @@ public final class RadarTab extends JPanel {
     private final JMenuItem copyHostsItem = new JMenuItem("Copy hosts");
     private final JMenuItem copyCsvItem = new JMenuItem("Copy as CSV");
     private final JMenuItem removeItem = new JMenuItem("Remove from results");
-    private String watchedUrl;
-    private boolean watchedOff;
-    private int serverCheck;
     private boolean updatingDomains;
 
     /**
@@ -207,18 +183,25 @@ public final class RadarTab extends JPanel {
         this.api = api;
         this.store = store;
         this.queue = queue;
-        this.gate = gate;
         this.options = options;
         this.projectSwitch = projectSwitch;
-        this.radar = radar;
         this.report = report;
         this.addToSiteMap = addToSiteMap;
-        this.scopeHosts = scopeHosts;
         this.background = background;
-        this.model = new ResultsTableModel(store, h -> api.scope().isInScope(IssuePlanner.baseUrl(h)));
+        this.log = TabLog.of(m -> api.logging().raiseInfoEvent(m), m -> api.logging().logToError(m),
+                (m, e) -> api.logging().logToError(m, e));
+        Predicate<String> inScope = h -> api.scope().isInScope(IssuePlanner.baseUrl(h));
+        this.model = new ResultsTableModel(store, inScope);
         this.table = new ResultsTable(model);
         this.jobsPanel = new JobsPanel(queue);
         this.jobsScroll = new JobsScroll(jobsPanel);
+        // The parts call the tab's dialogs and clipboard through these lambdas, so tests can replace them later.
+        Consumer<String> tell = m -> message.accept(m);
+        SendConfirm ask = q -> confirm.ask(q);
+        this.server = new ServerStatus(options, gate, radar, background, log);
+        this.export = new ExportActions(model, store, options, inScope, background, log, tell, t -> clipboard.accept(t), this,
+                api.userInterface()::applyThemeToComponent);
+        this.scopeCheck = new ScopeCheckButton(options, store, queue, scopeHosts, server::limitsNow, background, log, tell, ask);
 
         setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         add(north(), BorderLayout.NORTH);
@@ -227,7 +210,6 @@ public final class RadarTab extends JPanel {
         buildRowMenu();
 
         store.addListener(updates::mark);
-        gate.addListener(m -> SwingUtilities.invokeLater(() -> showMeta(m)));
         scopeWatch = api.scope().registerScopeChangeHandler(e -> {
             scopeChanged.set(true);
             updates.mark();
@@ -236,7 +218,7 @@ public final class RadarTab extends JPanel {
         flush();
         api.userInterface().applyThemeToComponent(this);
         api.userInterface().applyThemeToComponent(rowMenu);
-        api.userInterface().applyThemeToComponent(exportMenu);
+        api.userInterface().applyThemeToComponent(export.menu);
     }
 
     private JPanel north() {
@@ -248,8 +230,6 @@ public final class RadarTab extends JPanel {
         domainField.addActionListener(e -> submit(JobKind.FIND_AND_CHECK));
         checkButton.addActionListener(e -> submit(JobKind.FIND_AND_CHECK));
         findButton.addActionListener(e -> submit(JobKind.FIND_SUBDOMAINS));
-        scopeButton.setMnemonic(KeyEvent.VK_I);
-        scopeButton.addActionListener(e -> checkScope());
         JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         row.add(domainLabel);
         row.add(domainField);
@@ -257,7 +237,7 @@ public final class RadarTab extends JPanel {
         row.add(checkButton);
         row.add(rescanBox);
         row.add(Box.createHorizontalStrut(12));
-        row.add(scopeButton);
+        row.add(scopeCheck.button);
         domainHint.setVisible(false);
         domainHint.setBorder(BorderFactory.createEmptyBorder(0, 6, 0, 0));
         JPanel form = new JPanel(new BorderLayout(0, 4));
@@ -313,18 +293,7 @@ public final class RadarTab extends JPanel {
         show.setLabelFor(filterBox);
         header.add(show);
         header.add(filterBox);
-        JMenuItem json = new JMenuItem("JSON...");
-        json.addActionListener(e -> export("json"));
-        JMenuItem csv = new JMenuItem("CSV...");
-        csv.addActionListener(e -> export("csv"));
-        JMenuItem summary = new JMenuItem("Copy summary");
-        summary.addActionListener(e -> copySummary());
-        exportMenu.add(json);
-        exportMenu.add(csv);
-        exportMenu.addSeparator();
-        exportMenu.add(summary);
-        exportButton.addActionListener(e -> exportMenu.show(exportButton, 0, exportButton.getHeight()));
-        header.add(exportButton);
+        header.add(export.button);
         cards.add(new JScrollPane(table), TABLE_CARD);
         cards.add(emptyLabel, EMPTY_CARD);
         JPanel p = new JPanel(new BorderLayout(0, 4));
@@ -367,7 +336,7 @@ public final class RadarTab extends JPanel {
         }
         restButton.setEnabled(false);
         background.execute(() -> {
-            Meta.Limits limits = limits(o);
+            Meta.Limits limits = server.limitsNow(o);
             SwingUtilities.invokeLater(() -> {
                 restButton.setEnabled(true);
                 if (confirm.ask(r.question(limits))) {
@@ -393,8 +362,6 @@ public final class RadarTab extends JPanel {
     }
 
     private JPanel south() {
-        tryAgainButton.addActionListener(e -> checkServer());
-        tryAgainButton.setVisible(false);
         link.addActionListener(e -> background.execute(this::openSite));
         // Burp takes one settings panel per extension, so this per-project switch sits here, kept in the project file.
         projectBox.setSelected(projectSwitch.off());
@@ -406,28 +373,38 @@ public final class RadarTab extends JPanel {
                 // A job waiting out a limit stops now, not when its wait ends.
                 queue.jobs().forEach(queue::retryNow);
             }
-            checkServer();
+            server.check();
         });
+        JPanel south = new JPanel(new BorderLayout(0, 4));
+        south.add(serverRow(), BorderLayout.NORTH);
+        south.add(footer(), BorderLayout.SOUTH);
+        return south;
+    }
+
+    /** The server line on the left, the project switch on the right. */
+    private JPanel serverRow() {
         // Try again first: a long reason is cut at the right edge, never the button; the tip has it whole.
         JPanel line = new JPanel(new BorderLayout(6, 0));
-        line.add(tryAgainButton, BorderLayout.WEST);
-        line.add(serverLabel, BorderLayout.CENTER);
-        JPanel server = new JPanel(new BorderLayout(12, 0));
-        server.add(line, BorderLayout.CENTER);
+        line.add(server.tryAgainButton, BorderLayout.WEST);
+        line.add(server.label, BorderLayout.CENTER);
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.add(line, BorderLayout.CENTER);
         JPanel project = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
         project.add(projectBox);
         project.add(projectHelp);
-        server.add(project, BorderLayout.EAST);
+        row.add(project, BorderLayout.EAST);
+        return row;
+    }
+
+    /** The footer note on the left, the version and the site link on the right. */
+    private JPanel footer() {
         JPanel footer = new JPanel(new BorderLayout(12, 0));
-        footer.add(footerLabel, BorderLayout.CENTER);
+        footer.add(server.footerLabel, BorderLayout.CENTER);
         JPanel corner = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         corner.add(versionLabel);
         corner.add(link);
         footer.add(corner, BorderLayout.EAST);
-        JPanel south = new JPanel(new BorderLayout(0, 4));
-        south.add(server, BorderLayout.NORTH);
-        south.add(footer, BorderLayout.SOUTH);
-        return south;
+        return footer;
     }
 
     private void buildRowMenu() {
@@ -569,56 +546,6 @@ public final class RadarTab extends JPanel {
         store.remove(hosts);
     }
 
-    /** Walks the site map in the background, then asks on the EDT; nothing is sent before the user agrees. */
-    private void checkScope() {
-        Options o = options.get();
-        if (o.offForProject()) {
-            message.accept(ServerLine.OFF_FOR_PROJECT.text());
-            return;
-        }
-        scopeButton.setEnabled(false);
-        background.execute(() -> {
-            ScopeCheck plan = scopePlan(o);
-            Meta.Limits limits = plan == null || plan.isEmpty() ? null : limits(o);
-            SwingUtilities.invokeLater(() -> askScope(plan, limits == null ? null : limits.hostsLeft()));
-        });
-    }
-
-    /** What the in-scope hosts of the site map give; null when the site map could not be read. */
-    private ScopeCheck scopePlan(Options o) {
-        try {
-            return ScopeCheck.plan(scopeHosts.get(), o.serverHost(), store::lastChecked, Instant.now());
-        } catch (RuntimeException e) {
-            api.logging().logToError("Hirdman Radar: could not read the site map", e);
-            return null;
-        }
-    }
-
-    /** The limits asked afresh, since the tab's /meta answer may be old; null when unknown. */
-    private Meta.Limits limits(Options o) {
-        if (o.serverUrlProblem().isPresent()) {
-            return null;
-        }
-        try {
-            return radar.get().meta().limits();
-        } catch (ApiException | RuntimeException e) {
-            // The job reports server problems itself.
-            return null;
-        }
-    }
-
-    private void askScope(ScopeCheck c, Integer hostsLeft) {
-        scopeButton.setEnabled(true);
-        if (c == null) {
-            return;
-        }
-        if (c.isEmpty()) {
-            message.accept(c.nothing());
-        } else if (confirm.ask(c.question(hostsLeft))) {
-            queue.submit(JobKind.CHECK_HOSTS, null, c.hosts(), false);
-        }
-    }
-
     private void checkHosts(List<String> hosts) {
         if (confirm.allows(queue.toSend(hosts).size())) {
             queue.submit(JobKind.CHECK_HOSTS, null, hosts, false);
@@ -638,63 +565,7 @@ public final class RadarTab extends JPanel {
     }
 
     private void addSelectedToSiteMap(List<String> hosts) {
-        background.execute(() -> api.logging().raiseInfoEvent(addToSiteMap.apply(hosts)));
-    }
-
-    /** The rows shown (domain and filter), written in the background. */
-    private void export(String ext) {
-        List<HostResult> rows = IntStream.range(0, model.getRowCount()).mapToObj(model::rowAt).toList();
-        String domain = model.domain();
-        Optional<Path> path = saveDialog.apply(ResultsExport.fileName(domain, ext));
-        if (path.isEmpty()) {
-            return;
-        }
-        String site = options.get().issueOptions().site();
-        background.execute(() -> {
-            try {
-                Predicate<String> inScope = h -> api.scope().isInScope(IssuePlanner.baseUrl(h));
-                String text = ext.equals("json")
-                        ? ResultsExport.json(domain, rows, inScope, site, Version.current(), Instant.now())
-                        : ResultsExport.csv(rows, inScope);
-                Files.writeString(path.get(), text, StandardCharsets.UTF_8);
-                api.logging().raiseInfoEvent("Hirdman Radar: exported " + StatusText.count(rows.size(), "host") + " to " + path.get());
-            } catch (IOException | RuntimeException e) {
-                api.logging().logToError("Hirdman Radar: export to " + path.get() + " failed: " + e);
-                SwingUtilities.invokeLater(() -> message.accept(EXPORT_FAILED));
-            }
-        });
-    }
-
-    /** The whole domain, whatever the filter, as Markdown for a report. */
-    private void copySummary() {
-        String domain = model.domain();
-        if (domain != null) {
-            clipboard.accept(ResultsSummary.markdown(domain, store.domain(domain), options.get().issueOptions().site(), Instant.now()));
-        }
-    }
-
-    private Optional<Path> chooseFile(String name) {
-        String ext = name.substring(name.lastIndexOf('.'));
-        JFileChooser chooser = new JFileChooser() {
-            @Override
-            public void approveSelection() {
-                File f = getSelectedFile();
-                if (!f.getName().toLowerCase(Locale.ROOT).endsWith(ext)) {
-                    f = new File(f.getParentFile(), f.getName() + ext);
-                    setSelectedFile(f);
-                }
-                if (f.exists() && JOptionPane.showConfirmDialog(this, f.getName() + " already exists. Replace it?", "Export",
-                        JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
-                    return;
-                }
-                super.approveSelection();
-            }
-        };
-        chooser.setDialogTitle("Export results");
-        chooser.setSelectedFile(new File(name));
-        api.userInterface().applyThemeToComponent(chooser);
-        return chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION ? Optional.of(chooser.getSelectedFile().toPath())
-                : Optional.empty();
+        background.execute(() -> log.info(addToSiteMap.apply(hosts)));
     }
 
     private void createIssues(List<HostResult> rows) {
@@ -702,7 +573,7 @@ public final class RadarTab extends JPanel {
                 : rows.stream().filter(r -> r.hasLeaks() && !model.inScope(r.host())).count();
         background.execute(() -> {
             int created = report.applyAsInt(rows);
-            api.logging().raiseInfoEvent("Hirdman Radar: created " + StatusText.count(created, "issue") + " for "
+            log.info("Hirdman Radar: created " + StatusText.count(created, "issue") + " for "
                     + StatusText.count(rows.size(), "host") + (out == 0 ? "" : ". " + outOfScope(out)));
         });
     }
@@ -711,7 +582,7 @@ public final class RadarTab extends JPanel {
         try {
             Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text), null);
         } catch (HeadlessException | IllegalStateException e) {
-            api.logging().logToError("Hirdman Radar: the clipboard is not available: " + e);
+            log.error("Hirdman Radar: the clipboard is not available: " + e);
         }
     }
 
@@ -742,7 +613,7 @@ public final class RadarTab extends JPanel {
     void tick() {
         if (shown.getAsBoolean()) {
             updates.tick();
-            watchServer();
+            server.watch();
         }
     }
 
@@ -793,61 +664,6 @@ public final class RadarTab extends JPanel {
         }
     }
 
-    /** Asks the server again when the Server URL or the project switch has changed. */
-    void watchServer() {
-        Options o = options.get();
-        if (!Objects.equals(o.serverUrl(), watchedUrl) || o.offForProject() != watchedOff) {
-            checkServer();
-        }
-    }
-
-    /** /meta in the background; a later check makes the answer of an earlier one stale. */
-    void checkServer() {
-        Options o = options.get();
-        watchedUrl = o.serverUrl();
-        watchedOff = o.offForProject();
-        int check = ++serverCheck;
-        if (watchedOff) {
-            showServer(ServerLine.OFF_FOR_PROJECT);
-            return;
-        }
-        Optional<String> problem = o.serverUrlProblem();
-        if (problem.isPresent()) {
-            showServer(ServerLine.badUrl(problem.get()));
-            return;
-        }
-        ConnectionSettings server = ConnectionSettings.of(o.serverUrl());
-        background.execute(() -> {
-            ServerLine failed;
-            try {
-                gate.passed(server.server(), radar.get().meta());
-                return;
-            } catch (ApiException e) {
-                api.logging().logToError("Hirdman Radar: server check failed: " + e.getMessage());
-                failed = ServerLine.failed(e, server.host());
-            } catch (RuntimeException e) {
-                api.logging().logToError("Hirdman Radar: server check failed", e);
-                failed = ServerLine.UNEXPECTED;
-            }
-            SwingUtilities.invokeLater(() -> {
-                if (check == serverCheck) {
-                    showServer(failed);
-                }
-            });
-        });
-    }
-
-    private void showMeta(Meta m) {
-        showServer(ServerLine.passed(m, Version.current()));
-        footerLabel.setText(ServerLine.footer(m));
-    }
-
-    private void showServer(ServerLine line) {
-        serverLabel.setText(line.text());
-        PlainText.tip(serverLabel, line.text());
-        tryAgainButton.setVisible(line.tryAgain());
-    }
-
     private void openSite() {
         try {
             if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
@@ -855,10 +671,10 @@ public final class RadarTab extends JPanel {
                 return;
             }
         } catch (IOException | RuntimeException e) {
-            api.logging().logToError("Hirdman Radar: cannot open " + SITE + ": " + e);
+            log.error("Hirdman Radar: cannot open " + SITE + ": " + e);
             return;
         }
-        api.logging().logToError("Hirdman Radar: no browser to open here. The site is " + SITE);
+        log.error("Hirdman Radar: no browser to open here. The site is " + SITE);
     }
 
     private static void inBackground(Runnable r) {
