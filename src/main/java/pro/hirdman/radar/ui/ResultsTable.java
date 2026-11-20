@@ -105,9 +105,11 @@ public final class ResultsTable extends JTable {
             }
             int width = Math.max(cells.stringWidth(SAMPLES.get(m)), names.stringWidth(model.getColumnName(m))) + MARGIN;
             col.setPreferredWidth(width);
-            col.setMaxWidth(m == ResultsTableModel.STATUS ? Integer.MAX_VALUE : width * 3);
             if (m == ResultsTableModel.STATUS) {
+                col.setMaxWidth(Integer.MAX_VALUE);
                 statusWidth = width;
+            } else {
+                col.setMaxWidth(width * 3);
             }
         }
         fitHost();
@@ -262,7 +264,11 @@ public final class ResultsTable extends JTable {
         public Component getTableCellRendererComponent(JTable table, Object value, boolean selected, boolean focus, int row,
                 int column) {
             int modelColumn = table.convertColumnIndexToModel(column);
-            Object shown = value instanceof Risk r ? r.label() : value instanceof Number n ? counts.format(n) : value;
+            Object shown = switch (value) {
+                case Risk r -> r.label();
+                case Number n -> counts.format(n);
+                case null, default -> value;
+            };
             super.getTableCellRendererComponent(table, shown, selected, focus, row, column);
             setHorizontalAlignment(COUNT_COLUMNS.contains(modelColumn) ? RIGHT : LEADING);
             if (selected) {
