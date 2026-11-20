@@ -9,7 +9,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 import pro.hirdman.radar.model.HostResult;
@@ -24,13 +23,13 @@ public final class ScopeIssues implements ScopeChangeHandler {
     private final BooleanSupplier auto;
     private final ToIntFunction<List<HostResult>> reportAll;
     private final Executor executor;
-    private final Consumer<String> error;
+    private final BiConsumer<String, Throwable> error;
     private final BiConsumer<Runnable, Duration> later;
     private final AtomicBoolean pending = new AtomicBoolean();
 
     /** {@code later} runs a task after a delay, without blocking the caller. */
     public ScopeIssues(Supplier<List<HostResult>> rows, BooleanSupplier auto, ToIntFunction<List<HostResult>> reportAll,
-            Executor executor, Consumer<String> error, BiConsumer<Runnable, Duration> later) {
+            Executor executor, BiConsumer<String, Throwable> error, BiConsumer<Runnable, Duration> later) {
         this.rows = rows;
         this.auto = auto;
         this.reportAll = reportAll;
@@ -62,7 +61,7 @@ public final class ScopeIssues implements ScopeChangeHandler {
                 reportAll.applyAsInt(rows.get());
             }
         } catch (RuntimeException e) {
-            error.accept("Hirdman Radar: issues after a scope change could not be created: " + e);
+            error.accept("Hirdman Radar: issues after a scope change could not be created", e);
         }
     }
 }

@@ -77,13 +77,14 @@ class BurpSiteMapTest {
         assertEquals(BurpSiteMap.SAMPLES, asked.stream().filter(u -> u.contains("many.")).count());
     }
 
-    static final String OFF = "Hirdman Radar: Burp's site map did not take a host, so found hosts stay in the plugin tab only. ";
+    static final String OFF = "Hirdman Radar: Burp's site map did not take a host, so found hosts stay in the plugin tab only";
 
     final List<String> urls = new ArrayList<>();
     final List<String> lookups = new ArrayList<>();
     final Set<String> present = new HashSet<>();
     final List<Object> added = new ArrayList<>();
     final List<String> errors = new ArrayList<>();
+    final List<Throwable> causes = new ArrayList<>();
     boolean reject;
 
     BurpSiteMap siteMap() {
@@ -96,8 +97,9 @@ class BurpSiteMapTest {
             return null;
         });
         Logging logging = fake(Logging.class, (m, a) -> {
-            if (m.equals("logToError") && a.length == 1 && a[0] instanceof String s) {
+            if (m.equals("logToError") && a.length == 2 && a[0] instanceof String s && a[1] instanceof Throwable t) {
                 errors.add(s);
+                causes.add(t);
                 return null;
             }
             return Fakes.DEFAULT;
@@ -255,8 +257,8 @@ class BurpSiteMapTest {
         s.addFound(List.of("a.example.com", "b.example.com"));
         s.addFound(List.of("c.example.com"));
         assertEquals(List.of("https://a.example.com/"), urls);
-        assertEquals(1, errors.size());
-        assertTrue(errors.get(0).startsWith(OFF), errors.get(0));
+        assertEquals(List.of(OFF), errors);
+        assertEquals("no response", causes.get(0).getMessage());
     }
 
     @Test

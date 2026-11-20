@@ -107,6 +107,7 @@ public final class RadarTab extends JPanel {
     private final ProjectSwitch projectSwitch;
     private final ToIntFunction<List<HostResult>> report;
     private final Function<List<String>, String> addToSiteMap;
+    private final Function<List<HostResult>, String> toOrganizer;
     private final Executor background;
     private final TabLog log;
     /** Rows and jobs change apart: a job's progress alone does not refresh the table. */
@@ -171,6 +172,7 @@ public final class RadarTab extends JPanel {
     private final JMenuItem recheckItem = new JMenuItem("Re-check failed");
     private final JMenuItem scopeItem = new JMenuItem("Add selected to scope");
     private final JMenuItem siteMapItem = new JMenuItem("Add selected to site map");
+    private final JMenuItem organizerItem = new JMenuItem("Send login page to Organizer");
     private final JMenuItem issuesItem = new JMenuItem("Create issues for selected hosts");
     private final JMenuItem copyHostsItem = new JMenuItem("Copy hosts");
     private final JMenuItem copyCsvItem = new JMenuItem("Copy as CSV");
@@ -184,21 +186,21 @@ public final class RadarTab extends JPanel {
 
     /**
      * {@code report} turns the selected rows into Burp issues and returns how many it created, null where Burp has no
-     * issues (Community Edition); {@code scopeHosts} lists
-     * the in-scope hosts of the site map and runs in the background.
+     * issues (Community Edition); {@code toOrganizer} copies the login pages of the rows from Burp's stores to Organizer and
+     * returns the event log line; {@code scopeHosts} lists the in-scope hosts of the site map. Both run in the background.
      */
     public RadarTab(MontoyaApi api, ResultStore store, JobQueue queue, MetaGate gate, Supplier<Options> options,
             ProjectSwitch projectSwitch, Supplier<Radar> radar, ToIntFunction<List<HostResult>> report,
-            Function<List<String>, String> addToSiteMap, Supplier<List<String>> scopeHosts, BooleanSupplier verifyTls,
-            Supplier<Component> dialogParent) {
-        this(api, store, queue, gate, options, projectSwitch, radar, report, addToSiteMap, scopeHosts, verifyTls, dialogParent,
-                RadarTab::inBackground);
+            Function<List<String>, String> addToSiteMap, Function<List<HostResult>, String> toOrganizer,
+            Supplier<List<String>> scopeHosts, BooleanSupplier verifyTls, Supplier<Component> dialogParent) {
+        this(api, store, queue, gate, options, projectSwitch, radar, report, addToSiteMap, toOrganizer, scopeHosts, verifyTls,
+                dialogParent, RadarTab::inBackground);
     }
 
     RadarTab(MontoyaApi api, ResultStore store, JobQueue queue, MetaGate gate, Supplier<Options> options,
             ProjectSwitch projectSwitch, Supplier<Radar> radar, ToIntFunction<List<HostResult>> report,
-            Function<List<String>, String> addToSiteMap, Supplier<List<String>> scopeHosts, BooleanSupplier verifyTls,
-            Supplier<Component> dialogParent, Executor background) {
+            Function<List<String>, String> addToSiteMap, Function<List<HostResult>, String> toOrganizer,
+            Supplier<List<String>> scopeHosts, BooleanSupplier verifyTls, Supplier<Component> dialogParent, Executor background) {
         super(new BorderLayout(0, 6));
         this.api = api;
         this.dialogParent = dialogParent;
@@ -212,6 +214,7 @@ public final class RadarTab extends JPanel {
         this.projectSwitch = projectSwitch;
         this.report = report;
         this.addToSiteMap = addToSiteMap;
+        this.toOrganizer = toOrganizer;
         this.background = background;
         this.log = TabLog.of(m -> api.logging().raiseInfoEvent(m), m -> api.logging().logToError(m),
                 (m, e) -> api.logging().logToError(m, e));
@@ -460,6 +463,7 @@ public final class RadarTab extends JPanel {
         recheckItem.addActionListener(e -> checkHosts(model.failed()));
         scopeItem.addActionListener(e -> addToScope());
         siteMapItem.addActionListener(e -> addSelectedToSiteMap(table.selectedHosts()));
+        organizerItem.addActionListener(e -> sendToOrganizer(table.selected()));
         issuesItem.addActionListener(e -> createIssues(table.selected()));
         KeyStroke copyKey = KeyStroke.getKeyStroke(KeyEvent.VK_C, shortcutMask());
         KeyStroke deleteKey = KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0);
@@ -477,6 +481,7 @@ public final class RadarTab extends JPanel {
         rowMenu.addSeparator();
         rowMenu.add(scopeItem);
         rowMenu.add(siteMapItem);
+        rowMenu.add(organizerItem);
         if (report != null) {
             rowMenu.add(issuesItem);
         }
@@ -519,6 +524,7 @@ public final class RadarTab extends JPanel {
             i.setEnabled(any);
         }
         recheckItem.setEnabled(!model.failed().isEmpty());
+        organizerItem.setEnabled(table.selected().stream().anyMatch(r -> r.login() != null));
     }
 
     /** Shows the domain of the first host with a row, every row if the filter hides one, and selects its hosts. */
@@ -680,6 +686,12 @@ public final class RadarTab extends JPanel {
 
     private void addSelectedToSiteMap(List<String> hosts) {
         background.execute(() -> log.info(addToSiteMap.apply(hosts)));
+    }
+
+    /** Local to Burp, so it works in a private project too. */
+    private void sendToOrganizer(List<HostResult> rows) {
+        List<HostResult> logins = rows.stream().filter(r -> r.login() != null).toList();
+        background.execute(() -> log.info(toOrganizer.apply(logins)));
     }
 
     private void createIssues(List<HostResult> rows) {

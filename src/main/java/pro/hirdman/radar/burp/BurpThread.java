@@ -6,16 +6,16 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 import pro.hirdman.radar.Threads;
 
 /** One background thread for calls into Burp (issues, site map), so job polling never waits on Burp. */
 public final class BurpThread implements Executor {
 
     private final ExecutorService service = Executors.newSingleThreadExecutor(Threads.daemon("hirdman-radar-burp"));
-    private final Consumer<String> error;
+    private final BiConsumer<String, Throwable> error;
 
-    public BurpThread(Consumer<String> error) {
+    public BurpThread(BiConsumer<String, Throwable> error) {
         this.error = error;
     }
 
@@ -27,7 +27,7 @@ public final class BurpThread implements Executor {
                 try {
                     task.run();
                 } catch (RuntimeException e) {
-                    error.accept("Hirdman Radar: " + e);
+                    error.accept("Hirdman Radar: a call into Burp failed", e);
                 }
             });
         } catch (RejectedExecutionException e) {

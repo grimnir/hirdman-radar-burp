@@ -9,6 +9,7 @@ import java.awt.Component;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
@@ -17,6 +18,7 @@ import pro.hirdman.radar.api.ConnectionSettings;
 import pro.hirdman.radar.api.Radar;
 import pro.hirdman.radar.api.RadarClient;
 import pro.hirdman.radar.burp.BurpIssues;
+import pro.hirdman.radar.burp.BurpOrganizer;
 import pro.hirdman.radar.burp.BurpSiteMap;
 import pro.hirdman.radar.burp.BurpThread;
 import pro.hirdman.radar.burp.BurpTransport;
@@ -60,7 +62,7 @@ public final class HirdmanRadar implements BurpExtension {
 
         ProjectSwitch projectSwitch = new ProjectSwitch(api.persistence().extensionData());
         RadarSettings settings = new RadarSettings(api, projectSwitch::off, pro);
-        ProjectStore project = new ProjectStore(api.persistence().extensionData(), log::logToError);
+        ProjectStore project = new ProjectStore(api.persistence().extensionData(), log::logToError, log::logToError);
         ResultStore store = project.load();
 
         BurpTransport transport = new BurpTransport(api.http(), settings::verifyTls, projectSwitch::off, log::logToError);
@@ -108,8 +110,8 @@ public final class HirdmanRadar implements BurpExtension {
         // Dialogs open over Burp's main window (BApp Store rule), wherever the user is.
         Supplier<Component> suiteFrame = () -> api.userInterface().swingUtils().suiteFrame();
         RadarTab tab = Edt.call(() -> new RadarTab(api, store, queue, gate, settings::snapshot, projectSwitch, radar,
-                createIssues, siteMap::addSelected, () -> BurpSiteMap.inScopeHosts(api.siteMap(), api.scope()::isInScope),
-                settings::verifyTls, suiteFrame));
+                createIssues, siteMap::addSelected, new BurpOrganizer(api)::send,
+                () -> BurpSiteMap.inScopeHosts(api.siteMap(), api.scope()::isInScope), settings::verifyTls, suiteFrame));
         tabRef.set(tab);
         api.userInterface().registerSuiteTab("Hirdman Radar", tab);
         api.userInterface().registerContextMenuItemsProvider(new RadarMenu(queue, tab, suiteFrame, projectSwitch::off,
@@ -175,12 +177,12 @@ public final class HirdmanRadar implements BurpExtension {
     }
 
     /** Unload: a failing step must not skip the final save. */
-    static void runAll(Consumer<String> error, Runnable... steps) {
+    static void runAll(BiConsumer<String, Throwable> error, Runnable... steps) {
         for (Runnable step : steps) {
             try {
                 step.run();
             } catch (RuntimeException e) {
-                error.accept("Hirdman Radar: unload step failed: " + e);
+                error.accept("Hirdman Radar: unload step failed", e);
             }
         }
     }

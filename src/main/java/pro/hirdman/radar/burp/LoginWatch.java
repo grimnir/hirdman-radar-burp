@@ -4,6 +4,7 @@ import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.http.handler.HttpResponseReceived;
 import burp.api.montoya.http.message.MimeType;
 import burp.api.montoya.http.message.requests.HttpRequest;
+import burp.api.montoya.http.message.responses.HttpResponse;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -70,7 +71,7 @@ public final class LoginWatch implements Consumer<HttpResponseReceived> {
     }
 
     /** Searches the body in place: body() would copy the whole message first. The cheap word search spares the regex. */
-    private static boolean passwordField(HttpResponseReceived response) {
+    static boolean passwordField(HttpResponse response) {
         if (tooBig(response.headerValue("Content-Length"))) {
             return false;
         }

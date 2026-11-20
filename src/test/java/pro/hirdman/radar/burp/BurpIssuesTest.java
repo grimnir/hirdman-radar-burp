@@ -36,6 +36,7 @@ class BurpIssuesTest {
     final List<String> existing = new ArrayList<>();
     final List<AuditIssue> others = new ArrayList<>();
     final List<String> errors = new CopyOnWriteArrayList<>();
+    final List<Throwable> causes = new CopyOnWriteArrayList<>();
     String refused;
     boolean lookupFails;
     boolean inScope = true;
@@ -59,6 +60,9 @@ class BurpIssuesTest {
         });
         Logging logging = fake(Logging.class, (m, a) -> {
             errors.add(m + " " + a[0]);
+            if (a.length == 2) {
+                causes.add((Throwable) a[1]);
+            }
             return null;
         });
         MontoyaApi api = fake(MontoyaApi.class, Map.of("scope", scope, "siteMap", siteMap, "logging", logging));
@@ -160,10 +164,9 @@ class BurpIssuesTest {
         BurpIssues b = issues();
         assertEquals(1, b.report(row(HostStatus.CHECKED, STEALER, WORK)));
         assertEquals(List.of(P + WORK), added);
-        assertEquals(1, errors.size());
-        assertTrue(errors.get(0).startsWith("logToError Hirdman Radar: issue \"" + P + STEALER + "\" for vpn.example.com could not be created: "),
-                errors.get(0));
-        assertTrue(errors.get(0).contains("Burp says no"), errors.get(0));
+        assertEquals(List.of("logToError Hirdman Radar: issue \"" + P + STEALER + "\" for vpn.example.com could not be created"),
+                errors);
+        assertEquals("Burp says no", causes.get(0).getMessage());
         refused = null;
         assertEquals(1, b.report(row(HostStatus.CHECKED, STEALER, WORK)), "a refused issue is tried again");
     }
@@ -174,10 +177,8 @@ class BurpIssuesTest {
         BurpIssues b = issues();
         assertEquals(0, b.report(row(HostStatus.CHECKED, STEALER)));
         assertEquals(List.of(), added);
-        assertEquals(1, errors.size());
-        assertTrue(errors.get(0).startsWith("logToError Hirdman Radar: issues for vpn.example.com could not be created: "),
-                errors.get(0));
-        assertTrue(errors.get(0).contains("lookup failed"), errors.get(0));
+        assertEquals(List.of("logToError Hirdman Radar: issues for vpn.example.com could not be created"), errors);
+        assertEquals("lookup failed", causes.get(0).getMessage());
         // The next report looks again, so an issue Burp already has is not made twice.
         lookupFails = false;
         existing.add(P + STEALER);

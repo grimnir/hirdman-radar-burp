@@ -15,6 +15,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -39,7 +40,7 @@ public final class TrafficWatcher implements HttpHandler {
     /** In-scope hosts already offered since the last drain: their requests skip the scope check and the batcher. */
     private final Set<String> noted = ConcurrentHashMap.newKeySet();
     private final JobQueue queue;
-    private final Consumer<String> error;
+    private final BiConsumer<String, Throwable> error;
     private final AtomicBoolean loggedSkip = new AtomicBoolean();
     private final AtomicBoolean loggedResponse = new AtomicBoolean();
     private final Consumer<HttpResponseReceived> responses;
@@ -52,13 +53,13 @@ public final class TrafficWatcher implements HttpHandler {
      * {@code enabled} is read at most once a second on the request path and at every drain. {@code responses} gets every
      * response except the plugin's own, on Burp's threads, whatever {@code enabled} says: it only looks and sends nothing.
      */
-    public TrafficWatcher(NewHostBatcher batcher, BooleanSupplier enabled, JobQueue queue, Consumer<String> error,
+    public TrafficWatcher(NewHostBatcher batcher, BooleanSupplier enabled, JobQueue queue, BiConsumer<String, Throwable> error,
             Consumer<HttpResponseReceived> responses) {
         this(batcher, enabled, queue, error, responses, RequestToBeSentAction::continueWith, ResponseReceivedAction::continueWith);
     }
 
     /** The pass-through factories work only inside Burp, so tests hand in their own. */
-    TrafficWatcher(NewHostBatcher batcher, BooleanSupplier enabled, JobQueue queue, Consumer<String> error,
+    TrafficWatcher(NewHostBatcher batcher, BooleanSupplier enabled, JobQueue queue, BiConsumer<String, Throwable> error,
             Consumer<HttpResponseReceived> responses, Function<HttpRequestToBeSent, RequestToBeSentAction> passRequest,
             Function<HttpResponseReceived, ResponseReceivedAction> passResponse) {
         this.batcher = batcher;
@@ -83,7 +84,7 @@ public final class TrafficWatcher implements HttpHandler {
         } catch (RuntimeException e) {
             // Burp's own thread: never throw back, and log only the first failure.
             if (!loggedSkip.getAndSet(true)) {
-                error.accept("Hirdman Radar: traffic check skipped a request: " + e);
+                error.accept("Hirdman Radar: traffic check skipped a request", e);
             }
         }
         return passRequest.apply(request);
@@ -111,7 +112,7 @@ public final class TrafficWatcher implements HttpHandler {
             }
         } catch (RuntimeException e) {
             if (!loggedResponse.getAndSet(true)) {
-                error.accept("Hirdman Radar: login page check skipped a response: " + e);
+                error.accept("Hirdman Radar: login page check skipped a response", e);
             }
         }
         return passResponse.apply(response);
@@ -144,7 +145,7 @@ public final class TrafficWatcher implements HttpHandler {
         try {
             drainNow(now);
         } catch (RuntimeException e) {
-            error.accept("Hirdman Radar: traffic check failed: " + e);
+            error.accept("Hirdman Radar: traffic check failed", e);
         }
     }
 

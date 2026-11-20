@@ -27,6 +27,14 @@ class ProjectStoreTest {
     final Map<String, String> strings = new TreeMap<>();
     final List<String> written = new CopyOnWriteArrayList<>();
     final List<String> errors = new CopyOnWriteArrayList<>();
+
+    final List<Throwable> causes = new CopyOnWriteArrayList<>();
+
+    /** Burp's logToError(String, Throwable): the message and its cause apart. */
+    void error(String message, Throwable cause) {
+        errors.add(message);
+        causes.add(cause);
+    }
     RuntimeException writeFailure;
 
     final PersistedObject data = fake(PersistedObject.class, (m, a) -> switch (m) {
@@ -47,7 +55,7 @@ class ProjectStoreTest {
         }
         default -> Fakes.DEFAULT;
     });
-    final ProjectStore project = new ProjectStore(data, errors::add);
+    final ProjectStore project = new ProjectStore(data, errors::add, this::error);
 
     @AfterEach
     void tearDown() {
@@ -235,7 +243,8 @@ class ProjectStoreTest {
         check(s, "example.com", "a.example.com");
         writeFailure = new IllegalStateException("disk full");
         project.tick();
-        assertEquals(List.of("Hirdman Radar: results could not be saved: java.lang.IllegalStateException: disk full"), errors);
+        assertEquals(List.of("Hirdman Radar: results could not be saved"), errors);
+        assertEquals("disk full", causes.get(0).getMessage());
         writeFailure = null;
         project.tick();
         assertEquals(List.of(EXAMPLE), written);

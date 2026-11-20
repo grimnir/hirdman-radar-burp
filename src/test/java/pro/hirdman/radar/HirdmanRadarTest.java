@@ -19,13 +19,16 @@ class HirdmanRadarTest {
     void everyUnloadStepRunsWhenOneFails() {
         List<String> ran = new CopyOnWriteArrayList<>();
         List<String> errors = new CopyOnWriteArrayList<>();
-        HirdmanRadar.runAll(errors::add, () -> ran.add("traffic"), () -> {
+        List<Throwable> causes = new CopyOnWriteArrayList<>();
+        HirdmanRadar.runAll((m, e) -> {
+            errors.add(m);
+            causes.add(e);
+        }, () -> ran.add("traffic"), () -> {
             throw new IllegalStateException("tab broke");
         }, () -> ran.add("queue"), () -> ran.add("save"));
         assertEquals(List.of("traffic", "queue", "save"), ran);
-        assertEquals(1, errors.size(), errors.toString());
-        assertTrue(errors.get(0).startsWith("Hirdman Radar: unload step failed: "), errors.get(0));
-        assertTrue(errors.get(0).contains("tab broke"), errors.get(0));
+        assertEquals(List.of("Hirdman Radar: unload step failed"), errors);
+        assertEquals("tab broke", causes.get(0).getMessage());
     }
 
     @Test

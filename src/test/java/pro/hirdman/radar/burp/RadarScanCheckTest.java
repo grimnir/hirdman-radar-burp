@@ -14,6 +14,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import org.junit.jupiter.api.Test;
 import pro.hirdman.radar.model.HostResult;
 import pro.hirdman.radar.model.HostStatus;
@@ -22,6 +24,14 @@ class RadarScanCheckTest {
 
     final List<String> asked = new ArrayList<>();
     final List<String> errors = new ArrayList<>();
+
+    final List<Throwable> causes = new CopyOnWriteArrayList<>();
+
+    /** Burp's logToError(String, Throwable): the message and its cause apart. */
+    void error(String message, Throwable cause) {
+        errors.add(message);
+        causes.add(cause);
+    }
     final HostResult row = new HostResult("vpn.example.com", "example.com", HostStatus.CHECKED, 3, 0, 0, 0, List.of(), Instant.EPOCH);
     final AuditIssue found = issue("Hirdman Radar: Host found in infostealer logs", "https://vpn.example.com/");
     RuntimeException failure;
@@ -35,7 +45,7 @@ class RadarScanCheckTest {
                 throw failure;
             }
             return r == row ? List.of(found) : List.of();
-        }, issues -> fake(AuditResult.class, Map.of("auditIssues", issues)), errors::add);
+        }, issues -> fake(AuditResult.class, Map.of("auditIssues", issues)), this::error);
     }
 
     static AuditIssue issue(String name, String baseUrl) {
@@ -61,8 +71,8 @@ class RadarScanCheckTest {
     void aFailureIsLoggedAndTheScanGoesOn() {
         failure = new IllegalStateException("broken");
         assertEquals(List.of(), check().doCheck(base("vpn.example.com")).auditIssues());
-        assertEquals(1, errors.size());
-        assertTrue(errors.get(0).startsWith("Hirdman Radar: the scan check failed for vpn.example.com: "), errors.get(0));
+        assertEquals(List.of("Hirdman Radar: the scan check failed for vpn.example.com"), errors);
+        assertSame(failure, causes.get(0));
     }
 
     @Test
