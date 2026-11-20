@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test on JDK ${{ matrix.java }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # The classes are always built by the Temurin 21 toolchain; the matrix picks the JDK that runs the tests.
+        java: [21, 25]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: |
+            21
+            25
+
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          cache-provider: basic
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Test and build the jar
+        run: >
+          ./gradlew test jar jacocoTestReport
+          -PtestJava=${{ matrix.java }}
+          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64,JAVA_HOME_25_X64
+          -Porg.gradle.java.installations.auto-download=false
+
+      - name: SHA-256 of the jar
+        if: matrix.java == 21
+        working-directory: build/libs
+        run: sha256sum hirdman-radar-*.jar | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.java == 21
+        with:
+          name: jar
+          path: build/libs/hirdman-radar-*.jar
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: test-reports-jdk${{ matrix.java }}
+          path: |
+            build/reports/tests/test/
+            build/test-results/test/
+            build/reports/jacoco/test/
+          if-no-files-found: ignore
+
+  dependencies:
+    # Sends the resolved dependencies to the dependency graph, so Dependabot alerts cover Gson too.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/dependency-submission@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          cache-provider: basic
+          # The action's own graph plugin is not in gradle/verification-metadata.xml; this job builds nothing.
+          additional-arguments: >
+            --dependency-verification=lenient
+            -Porg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64
+            -Porg.gradle.java.installations.auto-download=false
