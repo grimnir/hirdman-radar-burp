@@ -1,5 +1,7 @@
 plugins {
     java
+    jacoco
+    id("info.solidsoft.pitest") version "1.19.0"
 }
 
 group = "pro.hirdman"
@@ -81,4 +83,44 @@ tasks.jar {
     // The bundled libraries' licenses travel with them; update the notice when their versions change.
     from("THIRD-PARTY-NOTICES.txt") { into("META-INF") }
     from("licenses") { into("META-INF/licenses") }
+}
+
+jacoco {
+    toolVersion = "0.8.16"
+}
+
+// Coverage report only, no threshold: ./gradlew test jacocoTestReport
+tasks.jacocoTestReport {
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+// Mutation testing of the pure logic, run by hand: ./gradlew pitest (report in build/reports/pitest).
+// Swing and thread code is left out: its mutants time out or need a screen.
+pitest {
+    pitestVersion = "1.30.2"
+    junit5PluginVersion = "1.2.3"
+    targetClasses = listOf(
+        "pro.hirdman.radar.model.*",
+        "pro.hirdman.radar.issues.*",
+        "pro.hirdman.radar.menu.*",
+        "pro.hirdman.radar.traffic.*",
+        "pro.hirdman.radar.jobs.RetryPolicy*",
+        "pro.hirdman.radar.Version*",
+        "pro.hirdman.radar.ui.ScopeCheck*",
+    )
+    targetTests = listOf(
+        "pro.hirdman.radar.model.*",
+        "pro.hirdman.radar.issues.*",
+        "pro.hirdman.radar.menu.*",
+        "pro.hirdman.radar.traffic.*",
+        "pro.hirdman.radar.jobs.RetryPolicyTest",
+        "pro.hirdman.radar.VersionTest",
+        "pro.hirdman.radar.ui.ScopeCheckTest",
+    )
+    jvmArgs = listOf("-Djava.awt.headless=true")
+    outputFormats = listOf("HTML", "XML")
+    timestampedReports = false
 }
