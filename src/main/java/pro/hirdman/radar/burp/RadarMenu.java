@@ -15,6 +15,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import javax.swing.JMenu;
@@ -30,21 +31,29 @@ public final class RadarMenu implements ContextMenuItemsProvider {
 
     /** Distinct hosts taken from a selection; the menu is built on the EDT, and Proxy history can select 50,000 rows. */
     static final int MAX_HOSTS = 1000;
+    static final String PRIVATE = "Private project: nothing is sent";
 
     private final JobQueue queue;
     private final Component tab;
     private final SendConfirm confirm;
+    private final BooleanSupplier offForProject;
     private final Consumer<List<String>> reveal;
 
-    /** {@code dialogParent} gives Burp's main window: the user asks from Proxy or Target, not from the tab. */
-    public RadarMenu(JobQueue queue, Component tab, Supplier<Component> dialogParent, Consumer<List<String>> reveal) {
-        this(queue, tab, SendConfirm.dialog(dialogParent), reveal);
+    /**
+     * {@code dialogParent} gives Burp's main window: the user asks from Proxy or Target, not from the tab.
+     * {@code offForProject} is the Private project switch.
+     */
+    public RadarMenu(JobQueue queue, Component tab, Supplier<Component> dialogParent, BooleanSupplier offForProject,
+            Consumer<List<String>> reveal) {
+        this(queue, tab, SendConfirm.dialog(dialogParent), offForProject, reveal);
     }
 
-    RadarMenu(JobQueue queue, Component tab, SendConfirm confirm, Consumer<List<String>> reveal) {
+    RadarMenu(JobQueue queue, Component tab, SendConfirm confirm, BooleanSupplier offForProject,
+            Consumer<List<String>> reveal) {
         this.queue = queue;
         this.tab = tab;
         this.confirm = confirm;
+        this.offForProject = offForProject;
         this.reveal = reveal;
     }
 
@@ -65,6 +74,23 @@ public final class RadarMenu implements ContextMenuItemsProvider {
         List<String> hosts = List.copyOf(raw);
         MenuModel model = MenuModel.of(hosts);
         JMenu root = menu("Hirdman Radar");
+        if (offForProject.getAsBoolean()) {
+            // Items that would queue a job that fails at once are replaced by the reason.
+            JMenuItem off = menuItem(PRIVATE);
+            off.setEnabled(false);
+            root.add(off);
+            root.addSeparator();
+        } else {
+            addChecks(root, model);
+        }
+        root.add(item("Show in Hirdman Radar tab", () -> {
+            reveal.accept(hosts);
+            showTab();
+        }));
+        return List.of(root);
+    }
+
+    private void addChecks(JMenu root, MenuModel model) {
         if (!model.findDomains().isEmpty()) {
             root.add(domains("Find subdomains of", model.findDomains(),
                     d -> queue.submit(JobKind.FIND_SUBDOMAINS, d, List.of(), false)));
@@ -80,11 +106,6 @@ public final class RadarMenu implements ContextMenuItemsProvider {
             }));
             root.addSeparator();
         }
-        root.add(item("Show in Hirdman Radar tab", () -> {
-            reveal.accept(hosts);
-            showTab();
-        }));
-        return List.of(root);
     }
 
     private static void addHost(Collection<String> hosts, HttpRequestResponse rr) {

@@ -585,6 +585,38 @@ class RadarTabTest {
     }
 
     @Test
+    void aPrivateProjectQueuesNothingFromTheFieldAndSaysWhyUnderIt() {
+        projectSwitch.set(true);
+        tab().message = m -> {
+            throw new AssertionError("no window: " + m);
+        };
+        tab().domainField.setText("example.com");
+        tab().domainField.postActionEvent();
+        tab().checkButton.doClick(0);
+        tab().findButton.doClick(0);
+        assertTrue(queue.jobs().isEmpty());
+        assertTrue(tab().domainHint.isVisible());
+        assertEquals(RadarTab.PRIVATE_HINT, tab().domainHint.getText());
+        projectSwitch.set(false);
+        tab().findButton.doClick(0);
+        assertFalse(tab().domainHint.isVisible());
+        assertEquals(1, queue.jobs().size());
+    }
+
+    @Test
+    void rowChecksInAPrivateProjectSayWhyInsteadOfQueueing() {
+        checked("a.example.com", null);
+        selectAll();
+        projectSwitch.set(true);
+        List<String> said = new ArrayList<>();
+        tab().message = said::add;
+        menuItem("Check selected hosts").doClick(0);
+        menuItem("Check again").doClick(0);
+        assertEquals(java.util.Collections.nCopies(2, ServerLine.OFF_FOR_PROJECT.text()), said);
+        assertTrue(queue.jobs().isEmpty());
+    }
+
+    @Test
     void aProjectSavedAsOffOpensWithTheSwitchTicked() {
         projectSwitch.set(true);
         assertTrue(tab().projectBox.isSelected());

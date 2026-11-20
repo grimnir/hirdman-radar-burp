@@ -108,7 +108,8 @@ public final class HirdmanRadar implements BurpExtension {
                 suiteFrame));
         tabRef.set(tab);
         api.userInterface().registerSuiteTab("Hirdman Radar", tab);
-        api.userInterface().registerContextMenuItemsProvider(new RadarMenu(queue, tab, suiteFrame, tab::reveal));
+        api.userInterface().registerContextMenuItemsProvider(new RadarMenu(queue, tab, suiteFrame, projectSwitch::off,
+                tab::reveal));
         api.userInterface().registerHttpRequestEditorProvider(context -> new RadarEditor(store,
                 host -> queue.checkAgain(List.of(host)), api.userInterface()::applyThemeToComponent));
 

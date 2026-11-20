@@ -119,7 +119,8 @@ class ServerStatusTest {
         status().check();
         drainEdt();
         assertEquals(OFF_LINE, status().label.getText());
-        assertTrue(status().tryAgainButton.isVisible());
+        // Trying again would give the same line.
+        assertFalse(status().tryAgainButton.isVisible());
         assertEquals(0, radar.metaCalls.get());
     }
 

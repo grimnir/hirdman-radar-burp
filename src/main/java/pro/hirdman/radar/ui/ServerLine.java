@@ -35,7 +35,7 @@ record ServerLine(String text, boolean tryAgain) {
         return new ServerLine(text, true);
     }
 
-    static final ServerLine OFF_FOR_PROJECT = new ServerLine("Private project: nothing is sent to the radar server.", true);
+    static final ServerLine OFF_FOR_PROJECT = new ServerLine("Private project: nothing is sent to the radar server.", false);
 
     static ServerLine badUrl(String problem) {
         return new ServerLine(problem, false);

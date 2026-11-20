@@ -86,6 +86,8 @@ public final class RadarTab extends JPanel {
     static final String RESCAN_TIP = "Scan the domain again instead of using the saved scan or the checks of the last 24 h. "
             + "Without a key, a domain can be rescanned once an hour. Unticks itself once the job is queued.";
     static final String NOT_A_DOMAIN = "Enter a domain name like example.com. IP addresses cannot be checked.";
+    static final String PRIVATE_HINT = "This project is private: nothing is sent to the radar server. Untick \"Private project\" "
+            + "at the bottom of this tab to check a domain.";
     private static final String[] REMOVE_BUTTONS = {"Remove", "Cancel"};
     private static final Duration PERIOD = Duration.ofMillis(250);
     private static final String TABLE_CARD = "table";
@@ -333,11 +335,10 @@ public final class RadarTab extends JPanel {
         if (rest.isEmpty()) {
             return;
         }
-        Options o = options.get();
-        if (o.offForProject()) {
-            message.accept(ServerLine.OFF_FOR_PROJECT.text());
+        if (sayIfPrivate()) {
             return;
         }
+        Options o = options.get();
         RestCheck r = rest.get();
         if (r.hosts().size() <= SendConfirm.QUIET_HOSTS) {
             queue.submit(JobKind.CHECK_HOSTS, null, r.hosts(), false);
@@ -502,10 +503,11 @@ public final class RadarTab extends JPanel {
         String raw = domainField.getText().trim();
         Optional<String> d = HostNames.domainInput(raw);
         // A line under the field, not a dialog: a typo is not worth a window.
-        boolean notADomain = d.isEmpty() && !raw.isEmpty();
-        domainHint.setText(notADomain ? NOT_A_DOMAIN : "");
-        domainHint.setVisible(notADomain);
-        if (d.isEmpty()) {
+        String hint = d.isEmpty() && !raw.isEmpty() ? NOT_A_DOMAIN
+                : d.isPresent() && options.get().offForProject() ? PRIVATE_HINT : "";
+        domainHint.setText(hint);
+        domainHint.setVisible(!hint.isEmpty());
+        if (d.isEmpty() || !hint.isEmpty()) {
             domainField.requestFocusInWindow();
             return;
         }
@@ -556,15 +558,24 @@ public final class RadarTab extends JPanel {
     }
 
     private void checkHosts(List<String> hosts) {
-        if (confirm.allows(queue.toSend(hosts).size())) {
+        if (!sayIfPrivate() && confirm.allows(queue.toSend(hosts).size())) {
             queue.submit(JobKind.CHECK_HOSTS, null, hosts, false);
         }
     }
 
     private void checkAgain(List<String> hosts) {
-        if (confirm.allows(hosts.size())) {
+        if (!sayIfPrivate() && confirm.allows(hosts.size())) {
             queue.checkAgain(hosts);
         }
+    }
+
+    /** A job in a private project would fail at once, so the user is told instead. */
+    private boolean sayIfPrivate() {
+        if (!options.get().offForProject()) {
+            return false;
+        }
+        message.accept(ServerLine.OFF_FOR_PROJECT.text());
+        return true;
     }
 
     private void addToScope() {

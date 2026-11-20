@@ -95,9 +95,10 @@ class RadarMenuTest {
     }
 
     final List<List<String>> revealed = new java.util.ArrayList<>();
+    boolean off;
 
     JMenu menu(String... hosts) {
-        List<Component> items = new RadarMenu(queue, tab, confirm, revealed::add).provideMenuItems(event(hosts));
+        List<Component> items = new RadarMenu(queue, tab, confirm, () -> off, revealed::add).provideMenuItems(event(hosts));
         assertEquals(1, items.size());
         return (JMenu) items.get(0);
     }
@@ -148,13 +149,25 @@ class RadarMenuTest {
     }
 
     @Test
+    void aPrivateProjectGetsOneInactiveItemInsteadOfTheChecks() {
+        off = true;
+        JMenu m = menu("vpn.example.com");
+        assertEquals(List.of("Private project: nothing is sent", "-", "Show in Hirdman Radar tab"), texts(m));
+        assertTrue(!find(m, "Private project: nothing is sent").isEnabled());
+        assertHtmlDisabled(m);
+        find(m, "Show in Hirdman Radar tab").doClick(0);
+        assertEquals(List.of(List.of("vpn.example.com")), revealed);
+        assertTrue(queue.jobs().isEmpty());
+    }
+
+    @Test
     void ipsGetOnlyTheTabItem() {
         assertEquals(List.of("Show in Hirdman Radar tab"), texts(menu("10.0.0.1")));
     }
 
     @Test
     void nothingSelectedShowsNoMenu() {
-        assertTrue(new RadarMenu(queue, tab, confirm, revealed::add).provideMenuItems(event()).isEmpty());
+        assertTrue(new RadarMenu(queue, tab, confirm, () -> off, revealed::add).provideMenuItems(event()).isEmpty());
     }
 
     @Test
@@ -162,7 +175,7 @@ class RadarMenuTest {
         Map<String, Object> answers = new HashMap<>();
         answers.put("messageEditorRequestResponse", Optional.of(fake(
                 burp.api.montoya.ui.contextmenu.MessageEditorHttpRequestResponse.class, Map.of("requestResponse", rr("a.example.com")))));
-        List<Component> items = new RadarMenu(queue, tab, confirm, revealed::add).provideMenuItems(fake(ContextMenuEvent.class, answers));
+        List<Component> items = new RadarMenu(queue, tab, confirm, () -> off, revealed::add).provideMenuItems(fake(ContextMenuEvent.class, answers));
         assertTrue(texts((JMenu) items.get(0)).contains("Check a.example.com for leaks"));
     }
 
@@ -202,7 +215,7 @@ class RadarMenuTest {
         noRequest.put("request", null);
         Map<String, Object> answers = new HashMap<>();
         answers.put("selectedRequestResponses", List.of(fake(HttpRequestResponse.class, noRequest), rr("a.example.com")));
-        List<Component> items = new RadarMenu(queue, tab, confirm, revealed::add).provideMenuItems(fake(ContextMenuEvent.class, answers));
+        List<Component> items = new RadarMenu(queue, tab, confirm, () -> off, revealed::add).provideMenuItems(fake(ContextMenuEvent.class, answers));
         assertTrue(texts((JMenu) items.get(0)).contains("Check a.example.com for leaks"));
     }
 
@@ -219,7 +232,7 @@ class RadarMenuTest {
         }
         Map<String, Object> answers = new HashMap<>();
         answers.put("selectedRequestResponses", selected);
-        List<Component> items = new RadarMenu(queue, tab, confirm, revealed::add).provideMenuItems(fake(ContextMenuEvent.class, answers));
+        List<Component> items = new RadarMenu(queue, tab, confirm, () -> off, revealed::add).provideMenuItems(fake(ContextMenuEvent.class, answers));
         assertTrue(texts((JMenu) items.get(0)).contains("Check " + RadarMenu.MAX_HOSTS + " selected hosts for leaks"));
         assertEquals(RadarMenu.MAX_HOSTS, read.get());
     }
@@ -247,7 +260,7 @@ class RadarMenuTest {
         Map<String, Object> answers = new HashMap<>();
         answers.put("selectedRequestResponses", List.of(fake(HttpRequestResponse.class, Map.of("request", request)),
                 rr("vpn.example.com")));
-        List<Component> items = new RadarMenu(queue, tab, confirm, revealed::add).provideMenuItems(fake(ContextMenuEvent.class,
+        List<Component> items = new RadarMenu(queue, tab, confirm, () -> off, revealed::add).provideMenuItems(fake(ContextMenuEvent.class,
                 answers));
         assertEquals(1, items.size());
     }
