@@ -47,30 +47,8 @@ public final class BurpIssues {
 
     /** Creates the missing issues of one host; returns how many were added. Never throws: Burp's refusals go to Errors. */
     public synchronized int report(HostResult r) {
-        if (r.status() != HostStatus.CHECKED) {
-            return 0;
-        }
-        String baseUrl = IssuePlanner.baseUrl(r.host());
-        List<IssueSpec> specs;
-        try {
-            boolean inScope = api.scope().isInScope(baseUrl);
-            specs = IssuePlanner.plan(r, inScope, options.get(), reported);
-            // Nothing new against what this session knows: skip the site map lookup, which is the slow part.
-            if (specs.isEmpty()) {
-                return 0;
-            }
-            // Only this host's issues are read, once a session and again after reportAgain.
-            if (!looked.contains(baseUrl)) {
-                existing.apply(baseUrl).forEach(i -> key(i).ifPresent(reported::add));
-                looked.add(baseUrl);
-                specs = specs.stream().filter(s -> !reported.contains(s.key())).toList();
-            }
-        } catch (RuntimeException e) {
-            api.logging().logToError("Hirdman Radar: issues for " + r.host() + " could not be created: " + e);
-            return 0;
-        }
         int added = 0;
-        for (IssueSpec s : specs) {
+        for (IssueSpec s : missing(r)) {
             try {
                 api.siteMap().add(toIssue.apply(s));
                 reported.add(s.key());
@@ -80,6 +58,47 @@ public final class BurpIssues {
             }
         }
         return added;
+    }
+
+    /**
+     * The passive scan check's share: the host's issues that neither this session nor Burp has yet. Burp adds what the
+     * check returns, so they count as reported and the site map path skips them. The auto option does not apply: a scan
+     * is the user's own request. Never throws.
+     */
+    public synchronized List<AuditIssue> forScan(HostResult r) {
+        List<IssueSpec> specs = missing(r);
+        List<AuditIssue> out;
+        try {
+            out = specs.stream().map(toIssue).toList();
+        } catch (RuntimeException e) {
+            api.logging().logToError("Hirdman Radar: issues for " + r.host() + " could not be created: " + e);
+            return List.of();
+        }
+        specs.forEach(s -> reported.add(s.key()));
+        return out;
+    }
+
+    /** Issues of a checked host that this session and Burp lack; a failed lookup is logged and gives none. */
+    private List<IssueSpec> missing(HostResult r) {
+        if (r.status() != HostStatus.CHECKED) {
+            return List.of();
+        }
+        String baseUrl = IssuePlanner.baseUrl(r.host());
+        try {
+            boolean inScope = api.scope().isInScope(baseUrl);
+            List<IssueSpec> specs = IssuePlanner.plan(r, inScope, options.get(), reported);
+            // Nothing new against what this session knows: skip the site map lookup, which is the slow part.
+            if (specs.isEmpty() || looked.contains(baseUrl)) {
+                return specs;
+            }
+            // Only this host's issues are read, once a session and again after reportAgain.
+            existing.apply(baseUrl).forEach(i -> key(i).ifPresent(reported::add));
+            looked.add(baseUrl);
+            return specs.stream().filter(s -> !reported.contains(s.key())).toList();
+        } catch (RuntimeException e) {
+            api.logging().logToError("Hirdman Radar: issues for " + r.host() + " could not be created: " + e);
+            return List.of();
+        }
     }
 
     /** The key of an issue already in Burp, by name and host; an address without a host gives none. */
