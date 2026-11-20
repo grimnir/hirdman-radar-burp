@@ -20,13 +20,20 @@ public final class ApiException extends Exception {
     private final int status;
     private final Duration retryAfter;
     private final String serverMessage;
+    private final boolean blocked;
 
     private ApiException(Kind kind, int status, Duration retryAfter, String serverMessage, String message, Throwable cause) {
+        this(kind, status, retryAfter, serverMessage, message, cause, false);
+    }
+
+    private ApiException(Kind kind, int status, Duration retryAfter, String serverMessage, String message, Throwable cause,
+            boolean blocked) {
         super(message, cause);
         this.kind = kind;
         this.status = status;
         this.retryAfter = retryAfter;
         this.serverMessage = serverMessage;
+        this.blocked = blocked;
     }
 
     public static ApiException unreachable(IOException cause) {
@@ -41,6 +48,15 @@ public final class ApiException extends Exception {
 
     public static ApiException malformed(String why, Throwable cause) {
         return new ApiException(Kind.MALFORMED, 0, null, null, Json.oneLine("Unexpected answer: " + why), cause);
+    }
+
+    /** The plugin stopped the request itself; sending it again would not help. Counts as an unusable answer. */
+    public static ApiException blocked(String reason) {
+        return new ApiException(Kind.MALFORMED, 0, null, null, reason, null, true);
+    }
+
+    public boolean blocked() {
+        return blocked;
     }
 
     public Kind kind() {

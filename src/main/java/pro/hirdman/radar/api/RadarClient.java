@@ -117,6 +117,8 @@ public final class RadarClient implements Radar {
             r = transport.send(method, url, headers, body, timeout);
         } catch (Transport.TooLarge e) {
             throw ApiException.malformed(e.getMessage(), null);
+        } catch (Transport.Altered e) {
+            throw ApiException.blocked(e.getMessage());
         } catch (IOException e) {
             throw ApiException.unreachable(e);
         }

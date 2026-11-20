@@ -167,4 +167,12 @@ class RetryPolicyTest {
     void malformedFailsOutsidePolls() {
         assertEquals(new Fail("Unexpected answer from the server"), decide(ApiException.malformed("x", null), 0, 5, Duration.ZERO, 0.5));
     }
+
+    @Test
+    void aBlockedRequestFailsWithItsReasonEvenOnAPoll() {
+        // Sending again would send the added headers again.
+        ApiException e = ApiException.blocked("Burp added headers to the radar request (Cookie).");
+        assertEquals(new Fail("Burp added headers to the radar request (Cookie)."), decide(e, 0));
+        assertEquals(new Fail("Burp added headers to the radar request (Cookie)."), decidePoll(e, 0, 5));
+    }
 }

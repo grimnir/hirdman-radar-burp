@@ -20,6 +20,13 @@ public interface Transport {
         }
     }
 
+    /** Burp changed the request on its way out (session rules, other extensions); its answer is not used. */
+    final class Altered extends IOException {
+        public Altered(String message) {
+            super(message);
+        }
+    }
+
     /** Throws IOException when no answer came back: refused, DNS, timeout, TLS. Never follows redirects. */
     Reply send(String method, URI url, Map<String, String> headers, String body, Duration timeout) throws IOException;
 }

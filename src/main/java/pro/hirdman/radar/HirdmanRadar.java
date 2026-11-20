@@ -48,7 +48,7 @@ public final class HirdmanRadar implements BurpExtension {
         ProjectStore project = new ProjectStore(api.persistence().extensionData(), log::logToError);
         ResultStore store = project.load();
 
-        BurpTransport transport = new BurpTransport(api.http(), settings::verifyTls, projectSwitch::off);
+        BurpTransport transport = new BurpTransport(api.http(), settings::verifyTls, projectSwitch::off, log::logToError);
         Supplier<Radar> radar = () -> RadarClient.of(settings.serverUrl(), transport);
         Consumer<String> events = e -> {
             if (JobRunner.isFailure(e)) {

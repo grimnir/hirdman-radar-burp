@@ -311,4 +311,16 @@ class RadarClientTest {
         }
         return b.append("]}").toString();
     }
+
+    @Test
+    void aRequestBurpAlteredIsBlocked() {
+        String why = "Burp added headers to the radar request (Cookie). Exclude the radar server from session handling rules.";
+        RadarClient c = new RadarClient(ConnectionSettings.of("https://scan.hirdman.pro"), (m, u, h, b, t) -> {
+            throw new Transport.Altered(why);
+        });
+        ApiException e = fails(() -> c.meta());
+        assertTrue(e.blocked());
+        assertEquals(why, e.getMessage());
+        assertFalse(fails(() -> client.poll("bad id", 0)).blocked());
+    }
 }

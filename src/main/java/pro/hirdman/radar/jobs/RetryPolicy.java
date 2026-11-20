@@ -39,6 +39,9 @@ public final class RetryPolicy {
      */
     public static Decision decide(ApiException e, int attemptsUsed, int maxAttempts, Duration waitedOn429,
             String serverHost, DoubleSupplier random, boolean poll) {
+        if (e.blocked()) {
+            return new Fail(e.getMessage());
+        }
         if (e.kind() == ApiException.Kind.MALFORMED) {
             return poll
                     ? backoff(e, attemptsUsed, Math.min(maxAttempts, MALFORMED_POLL_ATTEMPTS), random, MALFORMED, MALFORMED, poll)
