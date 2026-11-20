@@ -29,7 +29,33 @@ class ScopeIssuesTest {
             }
             reported.add(all);
             return all.size();
-        }, executor, errors::add);
+        }, executor, errors::add, (task, delay) -> {
+            delays.add(delay);
+            task.run();
+        });
+    }
+
+    final List<java.time.Duration> delays = new ArrayList<>();
+
+    @Test
+    void aBurstOfChangesWaitsASecondAndMakesOnePass() {
+        List<Runnable> waiting = new ArrayList<>();
+        ScopeIssues s = new ScopeIssues(() -> rows, () -> auto, all -> {
+            reported.add(all);
+            return all.size();
+        }, Runnable::run, errors::add, (task, delay) -> {
+            delays.add(delay);
+            waiting.add(task);
+        });
+        for (int i = 0; i < 20; i++) {
+            s.scopeChanged(null);
+        }
+        assertEquals(List.of(java.time.Duration.ofSeconds(1)), delays);
+        assertEquals(List.of(), reported);
+        waiting.get(0).run();
+        assertEquals(List.of(rows), reported);
+        s.scopeChanged(null);
+        assertEquals(2, waiting.size());
     }
 
     @Test

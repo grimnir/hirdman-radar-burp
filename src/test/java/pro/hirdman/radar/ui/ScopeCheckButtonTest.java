@@ -71,6 +71,20 @@ class ScopeCheckButtonTest {
     }
 
     @Test
+    void theButtonSaysItIsReadingTheSiteMap() throws Exception {
+        List<Runnable> later = new ArrayList<>();
+        ScopeCheckButton slow = new ScopeCheckButton(options::get, store, queue, this::walk, o -> null, later::add, log, said::add,
+                q -> false);
+        slow.button.doClick(0);
+        assertEquals("Reading site map...", slow.button.getText());
+        assertTrue(!slow.button.isEnabled());
+        later.get(0).run();
+        SwingUtilities.invokeAndWait(() -> { });
+        assertEquals("Check in-scope hosts", slow.button.getText());
+        assertTrue(slow.button.isEnabled());
+    }
+
+    @Test
     void checkInScopeHostsAsksWithTheCountsThenQueues() throws Exception {
         scopeHosts.addAll(List.of("a.example.com", "b.example.com", "c.example.com"));
         store.apply("example.com", new Check(false, "b.example.com", 0, 0, 0, 0, 1, true, List.of()), Instant.now());

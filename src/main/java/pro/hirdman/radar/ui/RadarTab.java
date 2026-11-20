@@ -639,10 +639,14 @@ public final class RadarTab extends JPanel {
         return true;
     }
 
+    /** One Burp call per host, so off the EDT; the scope column follows on the next tick. */
     private void addToScope() {
-        table.selectedHosts().forEach(h -> api.scope().includeInScope(IssuePlanner.baseUrl(h)));
-        model.forgetScope();
-        table.refreshKeepingSelection();
+        List<String> hosts = table.selectedHosts();
+        background.execute(() -> {
+            hosts.forEach(h -> api.scope().includeInScope(IssuePlanner.baseUrl(h)));
+            scopeChanged.set(true);
+            updates.mark();
+        });
     }
 
     private void addSelectedToSiteMap(List<String> hosts) {

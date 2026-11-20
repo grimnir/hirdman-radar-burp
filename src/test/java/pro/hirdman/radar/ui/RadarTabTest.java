@@ -319,7 +319,22 @@ class RadarTabTest {
         assertEquals("out", tab().model.getValueAt(0, ResultsTableModel.SCOPE));
         menuItem("Add selected to scope").doClick(0);
         assertEquals(List.of("https://a.example.com/"), included);
+        tab().shown = () -> true;
+        tab().tick();
         assertEquals("in", tab().model.getValueAt(0, ResultsTableModel.SCOPE));
+    }
+
+    @Test
+    void addSelectedToScopeRunsInTheBackground() {
+        List<Runnable> later = new ArrayList<>();
+        tab = new RadarTab(api, store, queue, gate, options::get, projectSwitch, () -> radar, List::size, hosts -> "", this::walk,
+                () -> true, () -> suiteFrame, later::add);
+        checked("a.example.com", null);
+        selectAll();
+        menuItem("Add selected to scope").doClick(0);
+        assertEquals(List.of(), included);
+        later.forEach(Runnable::run);
+        assertEquals(List.of("https://a.example.com/"), included);
     }
 
     @Test

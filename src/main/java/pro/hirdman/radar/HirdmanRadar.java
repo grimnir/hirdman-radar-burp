@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import javax.swing.Timer;
 import pro.hirdman.radar.api.ConnectionSettings;
 import pro.hirdman.radar.api.Radar;
 import pro.hirdman.radar.api.RadarClient;
@@ -94,7 +95,7 @@ public final class HirdmanRadar implements BurpExtension {
             }
         });
         api.scope().registerScopeChangeHandler(new ScopeIssues(store::all, () -> settings.snapshot().autoIssues(),
-                issues::reportAll, burpThread, log::logToError));
+                issues::reportAll, burpThread, log::logToError, HirdmanRadar::later));
         store.addFoundListener(hosts -> {
             if (settings.snapshot().addToSiteMap()) {
                 siteMap.addFound(hosts);
@@ -131,6 +132,13 @@ public final class HirdmanRadar implements BurpExtension {
             runAll(log::logToError, traffic::close, tab::close, queue::shutdown,
                     () -> burpThread.close(left(end, BURP_THREAD_WAIT)), project::close);
         });
+    }
+
+    /** Runs {@code task} once after {@code delay} on a Swing timer, which needs no thread of its own. */
+    static void later(Runnable task, Duration delay) {
+        Timer t = new Timer((int) delay.toMillis(), e -> task.run());
+        t.setRepeats(false);
+        t.start();
     }
 
     /** What is left of the unload budget ending at {@code end}, at most {@code max}. */
