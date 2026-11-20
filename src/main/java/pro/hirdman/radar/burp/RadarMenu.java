@@ -78,10 +78,7 @@ public final class RadarMenu implements ContextMenuItemsProvider {
             }));
             root.addSeparator();
         }
-        root.add(item("Show in Hirdman Radar tab", () -> {
-            reveal.accept(hosts);
-            showTab();
-        }));
+        root.add(item("Show in Hirdman Radar tab", () -> show(tab, reveal, hosts)));
         return List.of(root);
     }
 
@@ -102,8 +99,14 @@ public final class RadarMenu implements ContextMenuItemsProvider {
         return item;
     }
 
+    /** "Show in Hirdman Radar tab": marks the hosts in the tab and brings the tab to the front. */
+    public static void show(Component tab, Consumer<List<String>> reveal, List<String> hosts) {
+        reveal.accept(hosts);
+        showTab(tab);
+    }
+
     /** Selects the tab through its nearest JTabbedPane ancestor; does nothing when there is none. */
-    private void showTab() {
+    private static void showTab(Component tab) {
         Component child = tab;
         for (Container p = tab.getParent(); p != null; child = p, p = p.getParent()) {
             if (p instanceof JTabbedPane tabs) {

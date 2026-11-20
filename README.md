@@ -168,6 +168,11 @@ leaks in Proxy history (off by default, see the
 could not be checked; the number of attempts when the server is unavailable;
 *Always rescan*.
 
+- Turn off TLS verification only behind a proxy that re-signs HTTPS.
+- Hosts from traffic are in scope only, sent in batches every 60 s, and a host
+  checked in the last 24 h is skipped.
+- *Always rescan* still gets a domain scanned at most once an hour.
+
 ## About the data
 
 This is a partial check, about a third of a full HIRDMAN review. The plugin shows

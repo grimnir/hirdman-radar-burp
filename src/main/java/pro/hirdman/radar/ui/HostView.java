@@ -1,5 +1,7 @@
 package pro.hirdman.radar.ui;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -8,18 +10,30 @@ import java.util.List;
 import pro.hirdman.radar.api.ServerEvent.Finding;
 import pro.hirdman.radar.export.ResultsExport;
 import pro.hirdman.radar.model.HostResult;
-import pro.hirdman.radar.model.HostStatus;
 import pro.hirdman.radar.model.Risk;
 
 /** One host's row as plain lines, for the Hirdman Radar tab in Burp's message editor. */
 public final class HostView {
 
     private static final DateTimeFormatter AT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC);
+    /** Shown under a host with infostealer records; the link is tagged so visits from the editor can be told apart. */
+    public static final String FULL_CHECK = "A full HIRDMAN check names the affected devices and whether sessions still work.";
+    public static final String FULL_CHECK_URL = "https://hirdman.pro/?utm_source=burp&utm_medium=plugin&utm_content=editor";
 
     private HostView() {
     }
 
+    /** Whether the full-check line belongs under this host. */
+    public static boolean suggestsFullCheck(HostResult r) {
+        return r.checked() && r.stealer() > 0;
+    }
+
     public static List<String> lines(HostResult r) {
+        return lines(r, Instant.now());
+    }
+
+    /** {@code now} dates a saved result the server gave instead of a new check. */
+    public static List<String> lines(HostResult r, Instant now) {
         List<String> out = new ArrayList<>();
         switch (r.status()) {
             case FOUND -> out.add(r.host() + " was found as a subdomain of " + r.domain() + " and is not checked yet.");
@@ -39,7 +53,7 @@ public final class HostView {
                 }
                 r.findings().stream().sorted(Comparator.comparing((Finding f) -> Risk.ofSeverity(f.severity())).reversed())
                         .map(HostView::finding).forEach(out::add);
-                out.add(r.checkedAt() == null ? ResultsExport.NOTE : "Checked " + AT.format(r.checkedAt()) + " UTC. " + ResultsExport.NOTE);
+                out.add(checked(r, now) + ResultsExport.NOTE);
             }
         }
         if (r.login() != null) {
@@ -48,8 +62,25 @@ public final class HostView {
         return out;
     }
 
-    public static String button(HostResult r) {
-        return r.status() == HostStatus.FOUND ? "Check for leaks" : "Check again";
+    private static String checked(HostResult r, Instant now) {
+        if (r.checkedAt() == null) {
+            return "";
+        }
+        String at = AT.format(r.checkedAt()) + " UTC. ";
+        if (!r.replayed()) {
+            return "Checked " + at;
+        }
+        return "Checked " + ago(Duration.between(r.checkedAt(), now)) + " (saved result), " + at;
+    }
+
+    /** "12 min ago", "3 h ago", "4 days ago". */
+    static String ago(Duration d) {
+        long minutes = Math.max(1, d.toMinutes());
+        if (minutes < 60) {
+            return minutes + " min ago";
+        }
+        long hours = d.toHours();
+        return hours < 48 ? hours + " h ago" : d.toDays() + " days ago";
     }
 
     private static String verdict(HostResult r) {

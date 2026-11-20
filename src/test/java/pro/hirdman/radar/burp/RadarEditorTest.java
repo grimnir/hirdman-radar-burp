@@ -30,11 +30,14 @@ class RadarEditorTest {
     final ResultStore store = new ResultStore();
     final List<String> checks = new ArrayList<>();
     final List<Component> themed = new ArrayList<>();
+    final List<String> shown = new ArrayList<>();
+    final List<String> opened = new ArrayList<>();
+    boolean off;
     Job queued = waiting();
     final RadarEditor editor = new RadarEditor(store, h -> {
         checks.add(h);
         return queued;
-    }, themed::add);
+    }, shown::add, () -> off, opened::add, themed::add);
 
     static Job waiting() {
         return TestJobs.job(JobKind.CHECK_HOSTS, null, List.of("vpn.example.com"), JobState.WAITING, "Waiting");
@@ -77,22 +80,69 @@ class RadarEditorTest {
     }
 
     @Test
+    void theTextCanBeSelectedAndCopiedButNotEdited() {
+        check("vpn.example.com", "high");
+        editor.setRequestResponse(rr("vpn.example.com"));
+        assertFalse(editor.text.isEditable());
+        assertTrue(editor.text.getLineWrap());
+        assertTrue(editor.text.getWrapStyleWord());
+        editor.text.selectAll();
+        assertEquals(editor.text.getText(), editor.text.getSelectedText());
+    }
+
+    @Test
     void serverOrProjectTextIsNeverReadAsHtml() {
+        // A text area never renders HTML.
         Finding odd = new Finding("k", "info", "tentative", "<html><img src='http://127.0.0.1:9/x'>", "", "", "");
         store.apply("example.com", new Check(false, "vpn.example.com", 1, 0, 0, 0, 1, true, List.of(odd)), Instant.EPOCH);
         editor.setRequestResponse(rr("vpn.example.com"));
-        javax.swing.JPanel lines = (javax.swing.JPanel) ((javax.swing.JPanel) editor.uiComponent()).getComponent(0);
-        for (Component c : lines.getComponents()) {
-            assertNull(((javax.swing.JLabel) c).getClientProperty("html"), ((javax.swing.JLabel) c).getText());
-        }
         assertTrue(editor.lineTexts().contains("<html><img src='http://127.0.0.1:9/x'>"), editor.lineTexts().toString());
+    }
+
+    @Test
+    void showInTheTabDoesWhatTheMenuItemDoes() {
+        check("vpn.example.com", null);
+        editor.setRequestResponse(rr("VPN.example.com"));
+        assertEquals("Show in Hirdman Radar tab", editor.showButton.getText());
+        editor.showButton.doClick(0);
+        assertEquals(List.of("vpn.example.com"), shown);
+    }
+
+    @Test
+    void aPrivateProjectKeepsTheCheckButtonOffAndSaysWhy() {
+        check("vpn.example.com", null);
+        off = true;
+        editor.setRequestResponse(rr("vpn.example.com"));
+        assertFalse(editor.button.isEnabled());
+        assertEquals(RadarEditor.PRIVATE, editor.button.getToolTipText());
+        editor.button.doClick(0);
+        assertEquals(List.of(), checks);
+        assertTrue(editor.showButton.isEnabled());
+        off = false;
+        editor.refresh();
+        assertTrue(editor.button.isEnabled());
+        assertEquals(RadarEditor.CHECK_TIP, editor.button.getToolTipText());
+    }
+
+    @Test
+    void hostsInInfostealerLogsGetOneQuietLineToAFullCheck() {
+        store.apply("example.com", new Check(false, "vpn.example.com", 4, 0, 0, 0, 0, true, List.of()), Instant.EPOCH);
+        editor.setRequestResponse(rr("vpn.example.com"));
+        assertFalse(editor.fullCheck.isVisible());
+        check("vpn.example.com", "high");
+        editor.refresh();
+        assertTrue(editor.fullCheck.isVisible());
+        assertEquals(HostView.FULL_CHECK, editor.fullCheck.getText());
+        assertFalse(editor.fullCheck.isBorderPainted());
+        editor.fullCheck.doClick(0);
+        assertEquals(List.of("https://hirdman.pro/?utm_source=burp&utm_medium=plugin&utm_content=editor"), opened);
     }
 
     @Test
     void checkAgainQueuesTheHostAndTheViewCatchesUp() {
         check("vpn.example.com", null);
         editor.setRequestResponse(rr("vpn.example.com"));
-        assertEquals("Check again", editor.button.getText());
+        assertEquals("Check this host", editor.button.getText());
         editor.button.doClick(0);
         assertEquals(List.of("vpn.example.com"), checks);
         assertFalse(editor.button.isEnabled());
@@ -140,9 +190,9 @@ class RadarEditorTest {
         check("vpn.example.com", null);
         editor.setRequestResponse(rr("vpn.example.com"));
         editor.button.doClick(0);
-        TestJobs.update(queued, JobState.RETRYING, "Hourly limit without a key reached. Continues in 40 min.");
+        TestJobs.update(queued, JobState.RETRYING, "Hourly limit reached. Continues in 40 min.");
         editor.refresh();
-        assertEquals("Hourly limit without a key reached. Continues in 40 min.", editor.queuedLabel.getText());
+        assertEquals("Hourly limit reached. Continues in 40 min.", editor.queuedLabel.getText());
         assertEquals(editor.queuedLabel.getText(), editor.queuedLabel.getToolTipText());
         assertFalse(editor.button.isEnabled());
         TestJobs.update(queued, JobState.FAILED, "<html>Failed: x");

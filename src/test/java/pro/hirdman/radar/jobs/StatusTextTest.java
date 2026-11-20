@@ -35,7 +35,7 @@ class StatusTextTest {
         assertEquals("Done: 1 host, 0 with leaks", StatusText.done(1, 0, 0, false));
         assertEquals("Done: 38 hosts", StatusText.doneFound(38));
         assertEquals("Done: 1 host", StatusText.doneFound(1));
-        assertEquals("Done: 2 hosts, 1 with leaks. Saved scan: without a key, a domain can be rescanned once an hour.",
+        assertEquals("Done: 2 hosts, 1 with leaks. Not rescanned: the domain was scanned less than an hour ago, so that scan is shown.",
                 StatusText.done(2, 1, 0, true));
     }
 
@@ -44,9 +44,9 @@ class StatusTextTest {
         assertEquals("Server unavailable (HTTP 502). Retrying in 8 s, attempt 3 of 5.",
                 StatusText.retrying("Server unavailable (HTTP 502)", Duration.ofMillis(7600), 3, 5));
         assertEquals("Rate limited by the server. Waiting 60 s.", StatusText.rateLimited(Duration.ofSeconds(60)));
-        assertEquals("Hourly limit without a key reached. Continues in 40 min.", StatusText.hourlyLimit(Duration.ofSeconds(2400)));
-        assertEquals("Hourly limit without a key reached. Continues in 45 s.", StatusText.hourlyLimit(Duration.ofSeconds(45)));
-        assertEquals("Hourly limit without a key reached. Continues in 2 min.", StatusText.hourlyLimit(Duration.ofSeconds(120)));
+        assertEquals("Hourly limit reached. Continues in 40 min.", StatusText.hourlyLimit(Duration.ofSeconds(2400)));
+        assertEquals("Hourly limit reached. Continues in 45 s.", StatusText.hourlyLimit(Duration.ofSeconds(45)));
+        assertEquals("Hourly limit reached. Continues in 2 min.", StatusText.hourlyLimit(Duration.ofSeconds(120)));
         assertEquals("Busy with other jobs from your address. Waiting 30 s.", StatusText.busy(Duration.ofSeconds(30)));
     }
 
@@ -69,7 +69,7 @@ class StatusTextTest {
 
     @Test
     void aRepeatSaysWhatItSent() {
-        assertEquals("Nothing new for example.com: no new subdomains, all checked hosts are from the last 24 h."
+        assertEquals("Nothing new for example.com: no new subdomains, and every host was checked in the last 24 h."
                 + " Tick Rescan to scan again.", StatusText.nothingNew("example.com"));
         assertEquals(". Only new subdomains and failed checks were sent. Tick Rescan to scan again.", StatusText.REPEAT);
     }

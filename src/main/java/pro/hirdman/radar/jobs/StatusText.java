@@ -5,7 +5,7 @@ import java.time.Duration;
 /** Every status line of the Jobs strip. */
 public final class StatusText {
 
-    static final String SAVED_SCAN = ". Saved scan: without a key, a domain can be rescanned once an hour.";
+    static final String SAVED_SCAN = ". Not rescanned: the domain was scanned less than an hour ago, so that scan is shown.";
     /** Tail of a done status for a repeat leak check of a domain. */
     public static final String REPEAT = ". Only new subdomains and failed checks were sent. Tick Rescan to scan again.";
 
@@ -78,7 +78,7 @@ public final class StatusText {
 
     /** Status of a repeat leak check of a domain that found nothing to send. */
     public static String nothingNew(String domain) {
-        return "Nothing new for " + domain + ": no new subdomains, all checked hosts are from the last 24 h."
+        return "Nothing new for " + domain + ": no new subdomains, and every host was checked in the last 24 h."
                 + " Tick Rescan to scan again.";
     }
 
@@ -95,11 +95,16 @@ public final class StatusText {
     }
 
     public static String hourlyLimit(Duration after) {
-        return "Hourly limit without a key reached. Continues in " + span(after) + ".";
+        return "Hourly limit reached. Continues in " + span(after) + ".";
     }
 
     public static String busy(Duration after) {
         return "Busy with other jobs from your address. Waiting " + span(after) + ".";
+    }
+
+    /** HTTP 401: the server takes no keyless checks at the moment. */
+    public static String notTakingChecks() {
+        return "The radar server is not taking checks right now. Try again later.";
     }
 
     public static String failed(String reason) {

@@ -102,6 +102,20 @@ class IssuePlannerTest {
     }
 
     @Test
+    void theServersReviewLineFollowsTheLinkToTheScan() {
+        Finding withReview = new Finding(STEALER, "high", "tentative", "Server name", "<p>Found <b>3</b> records.</p>", "<p>Why.</p>",
+                "<p>Fix.</p>", "A full HIRDMAN review shows <who>.");
+        IssueOptions o = new IssueOptions(true, false, Risk.LOW, "https://scan.hirdman.pro");
+        String url = "https://scan.hirdman.pro/?domain=example.com";
+        assertEquals("<p>Found <b>3</b> records.</p><p>Checked by Hirdman Radar on 2026-11-17 (UTC). Latest scan of example.com"
+                + " and its subdomains: <a href=\"" + url + "\">" + url + "</a>. Its counts can differ from this issue.</p>"
+                + "<p>A full HIRDMAN review shows &lt;who&gt;.</p>",
+                IssuePlanner.plan(row(HostStatus.CHECKED, withReview), true, o, Set.of()).get(0).detail());
+        // Without a link there is nothing for it to sit next to.
+        assertEquals("<p>Found <b>3</b> records.</p>" + CHECKED, plan(row(HostStatus.CHECKED, withReview)).get(0).detail());
+    }
+
+    @Test
     void noLinkWithoutASiteOrAValidDomain() {
         assertEquals("<p>Found <b>3</b> records.</p>" + CHECKED, plan(row(HostStatus.CHECKED, f(STEALER, "high"))).get(0).detail());
         IssueOptions o = new IssueOptions(true, false, Risk.LOW, "https://scan.hirdman.pro");

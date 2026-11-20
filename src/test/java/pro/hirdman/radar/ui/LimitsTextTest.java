@@ -9,8 +9,8 @@ import pro.hirdman.radar.api.Meta.Limits;
 class LimitsTextTest {
 
     @Test
-    void limitsLineWithoutKey() {
-        assertEquals(Optional.of("Without a key: up to 50 hosts per check and 300 hosts per hour from your address."),
+    void freeLimitsLine() {
+        assertEquals(Optional.of("Free limits: up to 50 hosts per check and 300 per hour from your address."),
                 LimitsText.of(new Limits(50, 1.5, 300)));
         assertEquals(Optional.empty(), LimitsText.of(new Limits(400, 1.5, 0)));
         assertEquals(Optional.empty(), LimitsText.of(null));

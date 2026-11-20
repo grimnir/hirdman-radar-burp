@@ -400,8 +400,9 @@ public final class JobRunner {
         hosts.stream().map(HostNames::normalize).flatMap(Optional::stream).forEach(c.sent::add);
         c.runningStatus = StatusText.checking(0, hosts.size(), c.meta.limits().hostsPerSec());
         running(c);
+        // Check again is the user's own call, so it skips the server's shared results too.
         for (List<String> batch : batches(c, hosts)) {
-            runResumable(c, JobRequest.ofHosts(batch), batch);
+            runResumable(c, JobRequest.ofHosts(batch, c.job.force()), batch);
         }
     }
 
@@ -424,7 +425,7 @@ public final class JobRunner {
         }
         event(c, "Hirdman Radar: " + subject(c.job) + " was interrupted on the server, resuming");
         for (List<String> part : batches(c, left)) {
-            Outcome again = serverJob(c, JobRequest.ofHosts(part));
+            Outcome again = serverJob(c, JobRequest.ofHosts(part, c.job.force()));
             if (again instanceof Lost) {
                 throw fail(c, c.lastError != null ? c.lastError : "The server stopped the job");
             }

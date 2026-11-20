@@ -10,8 +10,8 @@ public record Options(String serverUrl, boolean autoIssues, boolean includeOutOf
         boolean watchTraffic, boolean recheckNotChecked, int attempts, boolean alwaysRescan, boolean offForProject) {
 
     public static final String DEFAULT_SERVER = "https://scan.hirdman.pro";
-    static final int MIN_ATTEMPTS = 1;
-    static final int MAX_ATTEMPTS = 10;
+    public static final int MIN_ATTEMPTS = 1;
+    public static final int MAX_ATTEMPTS = 10;
 
     public Options {
         lowest = lowest == null ? Risk.LOW : lowest;

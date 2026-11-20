@@ -118,12 +118,14 @@ public final class ResultStore {
     }
 
     private static HostResult row(String host, String domain, Check e, Instant now) {
+        Instant at = e.checkedAt(now);
         if (!e.checked()) {
-            return HostResult.withoutCounts(host, domain, HostStatus.NOT_CHECKED, now);
+            return HostResult.withoutCounts(host, domain, HostStatus.NOT_CHECKED, at);
         }
         HostStatus status = e.findings().isEmpty() ? HostStatus.CLEAN : HostStatus.CHECKED;
         return new HostResult(host, domain, status, Math.max(0, e.stealerCount()), Math.max(0, e.hcCorpFound()),
-                Math.max(0, e.hcOriginFound()), sum(e.dbEmailCount(), e.dbUrlCount()), e.findings(), now, e.breachSources());
+                Math.max(0, e.hcOriginFound()), sum(e.dbEmailCount(), e.dbUrlCount()), e.findings(), at, e.breachSources(), null,
+                e.wasReplayed());
     }
 
     /** Server counts are never negative here, and a sum too big for a long stops at the top. */

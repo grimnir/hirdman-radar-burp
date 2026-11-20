@@ -15,7 +15,7 @@ final class TestRadar implements Radar {
 
     static final Meta META = new Meta(1, "0.1.0", "anonymous", new Meta.Limits(50, 1.5, 300),
             new Meta.Notes("db", "cov", "Counts only, from the server."));
-    static final String LIMITS = "Without a key: up to 50 hosts per check and 300 hosts per hour from your address.";
+    static final String LIMITS = "Free limits: up to 50 hosts per check and 300 per hour from your address.";
 
     final AtomicInteger metaCalls = new AtomicInteger();
     final AtomicReference<Object> answer = new AtomicReference<>(META);

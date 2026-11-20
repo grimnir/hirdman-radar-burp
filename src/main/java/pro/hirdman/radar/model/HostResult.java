@@ -11,10 +11,12 @@ import pro.hirdman.radar.api.ServerEvent.Finding;
 /**
  * One host row. Counts: stealer = stealer_count, work = hc_corp_found, personal = hc_origin_found,
  * dbRecords = db_email_count + db_url_count. {@code checkedAt} is null until the host is checked;
- * {@code sources} are the breach_sources of the last check; {@code login} is a login page seen in traffic, or null.
+ * {@code sources} are the breach_sources of the last check; {@code login} is a login page seen in traffic, or null;
+ * {@code replayed}: the server gave a saved result, checked at {@code checkedAt}, not a check just then.
  */
 public record HostResult(String host, String domain, HostStatus status, int stealer, int work, int personal,
-        long dbRecords, List<Finding> findings, Instant checkedAt, List<BreachSource> sources, LoginPage login) {
+        long dbRecords, List<Finding> findings, Instant checkedAt, List<BreachSource> sources, LoginPage login,
+        boolean replayed) {
 
     /** The server sends the top 10; a project file is held to the same. */
     static final int MAX_SOURCES = 10;
@@ -30,6 +32,11 @@ public record HostResult(String host, String domain, HostStatus status, int stea
     }
 
     public HostResult(String host, String domain, HostStatus status, int stealer, int work, int personal, long dbRecords,
+            List<Finding> findings, Instant checkedAt, List<BreachSource> sources, LoginPage login) {
+        this(host, domain, status, stealer, work, personal, dbRecords, findings, checkedAt, sources, login, false);
+    }
+
+    public HostResult(String host, String domain, HostStatus status, int stealer, int work, int personal, long dbRecords,
             List<Finding> findings, Instant checkedAt, List<BreachSource> sources) {
         this(host, domain, status, stealer, work, personal, dbRecords, findings, checkedAt, sources, null);
     }
@@ -40,7 +47,7 @@ public record HostResult(String host, String domain, HostStatus status, int stea
     }
 
     public HostResult withLogin(LoginPage page) {
-        return new HostResult(host, domain, status, stealer, work, personal, dbRecords, findings, checkedAt, sources, page);
+        return new HostResult(host, domain, status, stealer, work, personal, dbRecords, findings, checkedAt, sources, page, replayed);
     }
 
     /** A row without a successful check: no counts, no findings. */

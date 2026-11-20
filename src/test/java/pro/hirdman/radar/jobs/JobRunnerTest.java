@@ -38,7 +38,7 @@ import pro.hirdman.radar.model.ResultStore;
 class JobRunnerTest {
 
     static final String OFFLINE = "Cannot reach scan.hirdman.pro. The plugin needs internet access, directly or through Burp's upstream proxy. Behind a proxy that re-signs HTTPS, turn off the certificate check in Settings > Extensions > Hirdman Radar.";
-    static final String SAVED = ". Saved scan: without a key, a domain can be rescanned once an hour.";
+    static final String SAVED = ". Not rescanned: the domain was scanned less than an hour ago, so that scan is shown.";
 
     final FakeRadar radar = new FakeRadar();
     final ResultStore store = new ResultStore();
@@ -353,7 +353,7 @@ class JobRunnerTest {
         radar.polls.add(page(11, true, plus(checks(all.subList(50, 60)), done(10, 0))));
         Job j = job(JobKind.CHECK_HOSTS, null, all, false);
         run(j);
-        assertTrue(statuses.contains("Hourly limit without a key reached. Continues in 40 min."), statuses.toString());
+        assertTrue(statuses.contains("Hourly limit reached. Continues in 40 min."), statuses.toString());
         assertTrue(pauses.contains(Duration.ofSeconds(2400)), pauses.toString());
         assertEquals(JobState.DONE, j.state());
         assertEquals(60, store.all().size());
@@ -366,7 +366,7 @@ class JobRunnerTest {
         Job j = domainJob();
         run(j);
         assertEquals(JobState.FAILED, j.state());
-        assertEquals("Failed: The radar server does not accept requests without a key right now.", j.status());
+        assertEquals("Failed: The radar server is not taking checks right now. Try again later.", j.status());
         assertEquals(1, radar.started.size());
         assertTrue(pauses.isEmpty());
     }
@@ -638,7 +638,7 @@ class JobRunnerTest {
         events.clear();
         radar.starts.add(http(401, "{\"error\":\"unauthorized\"}"));
         run(job(JobKind.CHECK_HOSTS, null, List.of("d.example.com", "e.example.com"), false));
-        assertEquals(List.of("Hirdman Radar: leak check of 2 hosts failed: The radar server does not accept requests without a key right now."),
+        assertEquals(List.of("Hirdman Radar: leak check of 2 hosts failed: The radar server is not taking checks right now. Try again later."),
                 events);
     }
 
@@ -702,8 +702,32 @@ class JobRunnerTest {
         radar.polls.add(page(1, true, check("a.example.com", true), done(1, 0)));
         Job j = new Job(JobKind.CHECK_HOSTS, null, List.of("a.example.com"), false, false, true, x -> { });
         run(j);
-        assertEquals(List.of(JobRequest.ofHosts(List.of("a.example.com"))), radar.started);
+        // Asked for by the user, so the server's shared 24-hour result is skipped too.
+        assertEquals(List.of(JobRequest.ofHosts(List.of("a.example.com"), true)), radar.started);
         assertEquals("Done: 1 host, 0 with leaks", j.status());
+    }
+
+    @Test
+    void automaticChecksTakeTheServersSharedResults() {
+        radar.polls.add(page(1, true, check("a.example.com", true), done(1, 0)));
+        run(job(JobKind.CHECK_HOSTS, null, List.of("a.example.com"), false));
+        assertEquals(List.of(JobRequest.ofHosts(List.of("a.example.com"), false)), radar.started);
+        assertTrue(radar.calls.contains("start {\"hosts\":[\"a.example.com\"]}"), radar.calls.toString());
+    }
+
+    @Test
+    void aRetriedCheckAgainStillSkipsTheSharedResults() {
+        radar.starts.add(http(400, "{\"error\":\"bad\"}"));
+        radar.polls.add(page(1, true, check("a.example.com", true), done(1, 0)));
+        Job j = new Job(JobKind.CHECK_HOSTS, null, List.of("a.example.com"), false, false, true, x -> { });
+        run(j);
+        assertEquals(JobState.FAILED, j.state());
+        assertTrue(j.resetForRetry());
+        run(j);
+        assertEquals(JobState.DONE, j.state());
+        assertEquals(List.of("start {\"hosts\":[\"a.example.com\"],\"rescan\":true}",
+                "start {\"hosts\":[\"a.example.com\"],\"rescan\":true}"),
+                radar.calls.stream().filter(c -> c.startsWith("start ")).toList());
     }
 
     @Test

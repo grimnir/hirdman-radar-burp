@@ -171,6 +171,24 @@ class ResultsJsonTest {
     }
 
     @Test
+    void replayAndReviewAreSavedAndOlderRowsLoadWithout() {
+        ResultStore s = new ResultStore();
+        Finding f = new Finding("stealer_logs", "high", "tentative", "N", "<p>d</p>", "<p>b</p>", "<p>r</p>", "A full review shows more.");
+        s.apply("example.com", new Check(false, "vpn.example.com", 0, 0, 0, 0, 1, true, List.of(f, f), List.of(),
+                "2026-11-17T08:30:00Z", true), ResultStoreTest.T2);
+        String json = ResultsJson.write(s);
+        assertEquals(1, json.split("A full review shows more", -1).length - 1, json);
+        List<String> errors = new ArrayList<>();
+        HostResult back = ResultsJson.read(json, errors::add).host("vpn.example.com").orElseThrow();
+        assertEquals(s.host("vpn.example.com").orElseThrow(), back);
+        assertTrue(back.replayed());
+        assertEquals("A full review shows more.", back.findings().get(0).review());
+        assertTrue(errors.isEmpty(), errors.toString());
+        ResultStore plain = sample();
+        assertTrue(!ResultsJson.write(plain).contains("replayed") && !ResultsJson.write(plain).contains("review"));
+    }
+
+    @Test
     void resultsSavedByTheFirstFormatStillLoad() {
         String json = """
                 {"v":1,"hosts":[{"host":"vpn.example.com","domain":"example.com","status":"CHECKED","stealer":2,

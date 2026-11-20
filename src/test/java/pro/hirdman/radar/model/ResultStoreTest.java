@@ -29,6 +29,20 @@ class ResultStoreTest {
     static final LoginPage VPN = new LoginPage(LoginPage.Kind.KNOWN_PATH, "FortiGate SSL VPN", "/remote/login");
 
     @Test
+    void theServersCheckTimeAndReplayAreKept() {
+        ResultStore s = new ResultStore();
+        Check replayed = new Check(false, "vpn.example.com", 0, 0, 0, 0, 0, true, List.of(), List.of(), "2026-11-17T08:30:00Z", true);
+        HostResult r = s.apply("example.com", replayed, T2).orElseThrow();
+        assertEquals(Instant.parse("2026-11-17T08:30:00Z"), r.checkedAt());
+        assertTrue(r.replayed());
+        s.noteLogin("vpn.example.com", FORM);
+        assertTrue(s.host("vpn.example.com").orElseThrow().replayed());
+        HostResult fresh = s.apply("example.com", check("vpn.example.com", true, 0), T2).orElseThrow();
+        assertEquals(T2, fresh.checkedAt());
+        assertFalse(fresh.replayed());
+    }
+
+    @Test
     void aLoginPageIsNotedOnKnownHostsAndOnlyImproves() {
         ResultStore s = new ResultStore();
         AtomicInteger changes = new AtomicInteger();

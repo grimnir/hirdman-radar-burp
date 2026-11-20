@@ -56,7 +56,7 @@ public final class RetryPolicy {
             return rateLimit(e, waitedOn429, poll);
         }
         if (status == 401) {
-            return new Fail("The radar server does not accept requests without a key right now.");
+            return new Fail(StatusText.notTakingChecks());
         }
         if (status == 500 || status == 502 || status == 503 || status == 504 || status >= 520 && status <= 524) {
             String reason = "Server unavailable (HTTP " + status + ")";
@@ -90,7 +90,7 @@ public final class RetryPolicy {
         Duration fallback;
         if (msg.startsWith("hourly limit without a key")) {
             kind = Wait.HOURLY_LIMIT;
-            reason = "Hourly limit without a key reached";
+            reason = "Hourly limit reached";
             fallback = Duration.ofSeconds(60);
         } else if (msg.startsWith("too many active jobs")) {
             kind = Wait.BUSY;
