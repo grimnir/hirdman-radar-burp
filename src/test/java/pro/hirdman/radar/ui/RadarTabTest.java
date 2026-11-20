@@ -523,6 +523,23 @@ class RadarTabTest {
     }
 
     @Test
+    void aJobChangeAloneLeavesTheTable() {
+        checked("a.example.com", null);
+        tab().shown = () -> true;
+        tab().flush();
+        java.util.concurrent.atomic.AtomicInteger refreshed = new java.util.concurrent.atomic.AtomicInteger();
+        tab().model.addTableModelListener(e -> refreshed.incrementAndGet());
+        queue.submit(JobKind.FIND_SUBDOMAINS, "example.com", List.of(), false);
+        tab().jobsChanged();
+        tab().tick();
+        assertEquals(0, refreshed.get());
+        assertTrue(tab().jobsScroll.isVisible());
+        checked("b.example.com", null);
+        tab().tick();
+        assertEquals(1, refreshed.get());
+    }
+
+    @Test
     void aHiddenTabWaitsUntilItIsShown() {
         tab().shown = () -> false;
         checked("a.example.com", null);

@@ -109,7 +109,9 @@ public final class RadarTab extends JPanel {
     private final Function<List<String>, String> addToSiteMap;
     private final Executor background;
     private final TabLog log;
-    private final UpdateCoalescer updates = new UpdateCoalescer(PERIOD, this::flush);
+    /** Rows and jobs change apart: a job's progress alone does not refresh the table. */
+    private final UpdateCoalescer rowUpdates = new UpdateCoalescer(PERIOD, this::flushRows);
+    private final UpdateCoalescer jobUpdates = new UpdateCoalescer(PERIOD, this::flushJobs);
     private final Registration scopeWatch;
     final Timer timer;
 
@@ -231,12 +233,12 @@ public final class RadarTab extends JPanel {
         add(south(), BorderLayout.SOUTH);
         buildRowMenu();
 
-        store.addListener(updates::mark);
+        store.addListener(rowUpdates::mark);
         scopeWatch = api.scope().registerScopeChangeHandler(e -> {
             scopeChanged.set(true);
-            updates.mark();
+            rowUpdates.mark();
         });
-        timer = new Timer(updates.periodMillis(), e -> tick());
+        timer = new Timer(rowUpdates.periodMillis(), e -> tick());
         flush();
         api.userInterface().applyThemeToComponent(this);
         api.userInterface().applyThemeToComponent(rowMenu);
@@ -552,7 +554,7 @@ public final class RadarTab extends JPanel {
         }
         model.setDomain(d.get());
         refreshDomains(store.domains());
-        updates.mark();
+        jobUpdates.mark();
     }
 
     static String internal(String name) {
@@ -645,7 +647,7 @@ public final class RadarTab extends JPanel {
         background.execute(() -> {
             hosts.forEach(h -> api.scope().includeInScope(IssuePlanner.baseUrl(h)));
             scopeChanged.set(true);
-            updates.mark();
+            rowUpdates.mark();
         });
     }
 
@@ -673,7 +675,7 @@ public final class RadarTab extends JPanel {
 
     /** Called by the job queue from any thread. */
     public void jobsChanged() {
-        updates.mark();
+        jobUpdates.mark();
     }
 
     /** Extension unload: stops the timer and the scope watch. */
@@ -697,7 +699,8 @@ public final class RadarTab extends JPanel {
     /** A hidden tab does no work: changes wait for the first tick after it is shown again. */
     void tick() {
         if (shown.getAsBoolean()) {
-            updates.tick();
+            rowUpdates.tick();
+            jobUpdates.tick();
             server.watch();
             showPrivateTip();
         }
@@ -705,18 +708,25 @@ public final class RadarTab extends JPanel {
 
     /** Applies every change since the last flush; runs on the EDT. */
     void flush() {
+        flushJobs();
+        flushRows();
+    }
+
+    private void flushJobs() {
+        jobsPanel.show(queue.jobs());
+        jobsScroll.setVisible(jobsPanel.hasJobs());
+        showEmptyState();
+    }
+
+    /** The table's model change shows the empty state, if any. */
+    private void flushRows() {
         if (scopeChanged.getAndSet(false)) {
             model.forgetScope();
         }
-        List<Job> jobs = queue.jobs();
-        jobsPanel.show(jobs);
-        jobsScroll.setVisible(jobsPanel.hasJobs());
         List<String> stored = store.domains();
         anyStored = !stored.isEmpty();
         refreshDomains(stored);
         table.refreshKeepingSelection();
-        showEmptyState();
-        revalidate();
     }
 
     /** The table, or what its place says when it has no rows to show. */
