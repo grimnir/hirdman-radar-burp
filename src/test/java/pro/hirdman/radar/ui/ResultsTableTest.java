@@ -116,6 +116,27 @@ class ResultsTableTest {
     }
 
     @Test
+    void countsAreRightAlignedWithThousandsSeparators() {
+        checked("a.example.com", 10016, 1234, 0, 43778, null);
+        store.apply(D, new Check(false, "b.example.com", 0, 0, 0, 0, 0, false, List.of()), Instant.EPOCH);
+        show();
+        assertEquals("10,016", cell(0, ResultsTableModel.STEALER).getText());
+        assertEquals("1,234", cell(0, ResultsTableModel.WORK).getText());
+        assertEquals("0", cell(0, ResultsTableModel.PERSONAL).getText());
+        assertEquals("43,778", cell(0, ResultsTableModel.DB).getText());
+        for (int c : new int[] {ResultsTableModel.STEALER, ResultsTableModel.WORK, ResultsTableModel.PERSONAL, ResultsTableModel.DB}) {
+            assertEquals(javax.swing.SwingConstants.RIGHT, cell(0, c).getHorizontalAlignment());
+            assertEquals(javax.swing.SwingConstants.RIGHT, cell(1, c).getHorizontalAlignment());
+            assertEquals("", cell(1, c).getText());
+        }
+        assertEquals(javax.swing.SwingConstants.LEADING, cell(0, ResultsTableModel.HOST).getHorizontalAlignment());
+        assertEquals(javax.swing.SwingConstants.LEADING, cell(0, ResultsTableModel.STATUS).getHorizontalAlignment());
+        // Copies and exports keep plain numbers.
+        assertEquals("10016", model.text(0, ResultsTableModel.STEALER));
+        assertTrue(model.csv(new int[] {0}).contains(",10016,1234,0,43778,"));
+    }
+
+    @Test
     void selectedRowsUseTheSelectionColors() {
         checked("a.example.com", 3, 0, 0, 0, "high");
         show();

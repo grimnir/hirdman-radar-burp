@@ -5,10 +5,12 @@ import java.awt.Component;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.event.MouseEvent;
+import java.text.NumberFormat;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import javax.swing.JTable;
 import javax.swing.ListSelectionModel;
@@ -25,6 +27,9 @@ public final class ResultsTable extends JTable {
 
     /** Blank (unknown) counts sort below zero. */
     private static final Comparator<Object> COUNTS = Comparator.comparingLong(v -> v instanceof Number n ? n.longValue() : -1);
+    /** Model columns that hold counts. */
+    private static final Set<Integer> COUNT_COLUMNS = Set.of(ResultsTableModel.STEALER, ResultsTableModel.WORK,
+            ResultsTableModel.PERSONAL, ResultsTableModel.DB);
 
     /** Header tips by model column; Host needs none. */
     private static final List<String> HEADER_TIPS = Arrays.asList(null,
@@ -39,8 +44,8 @@ public final class ResultsTable extends JTable {
             "A login page seen in Burp traffic for this host.",
             "Hover a cell for the time of the last check.");
     /** The widest usual value of each model column. */
-    private static final List<String> SAMPLES = List.of("subdomain.example-domain.com", "Medium", "out", "000000", "000000",
-            "000000", "0000000", "2024-03-21", "FortiGate SSL VPN", "Checked (nothing found)");
+    private static final List<String> SAMPLES = List.of("subdomain.example-domain.com", "Medium", "out", "000,000", "000,000",
+            "000,000", "0,000,000", "2024-03-21", "FortiGate SSL VPN", "Checked (nothing found)");
 
     private final ResultsTableModel model;
     private final Renderer renderer = new Renderer();
@@ -49,7 +54,7 @@ public final class ResultsTable extends JTable {
         super(model);
         this.model = model;
         TableRowSorter<ResultsTableModel> sorter = new TableRowSorter<>(model);
-        for (int c : new int[] {ResultsTableModel.STEALER, ResultsTableModel.WORK, ResultsTableModel.PERSONAL, ResultsTableModel.DB}) {
+        for (int c : COUNT_COLUMNS) {
             sorter.setComparator(c, COUNTS);
         }
         setRowSorter(sorter);
@@ -181,6 +186,9 @@ public final class ResultsTable extends JTable {
     /** Colour marks only the Risk word and non-zero Infostealer, Work (High) and Personal (Medium); zero stays neutral. */
     private static final class Renderer extends DefaultTableCellRenderer {
 
+        /** "10,016", as in the issue text. */
+        private final NumberFormat counts = NumberFormat.getIntegerInstance(Locale.US);
+
         Renderer() {
             putClientProperty("html.disable", Boolean.TRUE);
         }
@@ -188,14 +196,16 @@ public final class ResultsTable extends JTable {
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value, boolean selected, boolean focus, int row,
                 int column) {
-            Object shown = value instanceof Risk r ? r.label() : value;
+            int modelColumn = table.convertColumnIndexToModel(column);
+            Object shown = value instanceof Risk r ? r.label() : value instanceof Number n ? counts.format(n) : value;
             super.getTableCellRendererComponent(table, shown, selected, focus, row, column);
+            setHorizontalAlignment(COUNT_COLUMNS.contains(modelColumn) ? RIGHT : LEADING);
             if (selected) {
                 setForeground(table.getSelectionForeground());
             } else {
                 // The cell's own background: striped rows differ from the table's.
                 Color bg = getBackground();
-                Color c = RiskColors.text(colorRisk(value, table.convertColumnIndexToModel(column)), RiskColors.dark(bg));
+                Color c = RiskColors.text(colorRisk(value, modelColumn), RiskColors.dark(bg));
                 setForeground(RiskColors.readable(c, table.getForeground(), bg));
             }
             return this;
