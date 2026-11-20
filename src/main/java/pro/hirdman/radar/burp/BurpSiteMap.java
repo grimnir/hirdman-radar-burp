@@ -24,19 +24,21 @@ import pro.hirdman.radar.jobs.StatusText;
 
 /**
  * Puts hosts into Target > Site map as entries without a response. Nothing is sent to the hosts. Burp overwrites a matching
- * item, so a host that already has anything in the site map is left alone.
+ * item, so a host that already has anything in the site map is left alone. Found hosts go in only when in scope: a Scan
+ * started on a site map branch would reach every host in it.
  */
 public final class BurpSiteMap {
 
     /** Distinct first path segments per origin whose first URL is asked about scope. */
     static final int SAMPLES = 32;
-    /** Found hosts wait this long for more, so a scan costs one site map walk per few seconds, not one per host. */
-    static final Duration GATHER = Duration.ofSeconds(10);
+    /** Found hosts wait this long for more: Burp locks its site map for a whole walk, so a scan walks it a few times only. */
+    static final Duration GATHER = Duration.ofSeconds(30);
 
     private record Put(int added, int there) {
     }
 
     private final MontoyaApi api;
+    private final Predicate<String> inScope;
     private final Function<String, HttpRequestResponse> entry;
     private final Function<Set<String>, Set<String>> presentAmong;
     private final Executor executor;
@@ -49,21 +51,22 @@ public final class BurpSiteMap {
 
     /** Batches of found hosts go to {@code burpThread} after {@link #GATHER}. */
     public BurpSiteMap(MontoyaApi api, Executor burpThread) {
-        this(api, url -> HttpRequestResponse.httpRequestResponse(HttpRequest.httpRequestFromUrl(url), null),
+        this(api, url -> api.scope().isInScope(url), url -> HttpRequestResponse.httpRequestResponse(HttpRequest.httpRequestFromUrl(url), null),
                 roots -> walk(api, roots),
                 CompletableFuture.delayedExecutor(GATHER.toMillis(), TimeUnit.MILLISECONDS, burpThread));
     }
 
     /** Burp's factories work only inside Burp, so tests pass their own. */
-    BurpSiteMap(MontoyaApi api, Function<String, HttpRequestResponse> entry, Function<Set<String>, Set<String>> presentAmong,
-            Executor executor) {
+    BurpSiteMap(MontoyaApi api, Predicate<String> inScope, Function<String, HttpRequestResponse> entry,
+            Function<Set<String>, Set<String>> presentAmong, Executor executor) {
         this.api = api;
+        this.inScope = inScope;
         this.entry = entry;
         this.presentAmong = presentAmong;
         this.executor = executor;
     }
 
-    /** Hosts the plugin learned about, each looked at once per session, in batches on the executor. */
+    /** Hosts the plugin learned about, in batches on the executor; each in-scope host is looked at once per session. */
     public void addFound(Collection<String> hosts) {
         synchronized (this) {
             if (off) {
@@ -92,7 +95,25 @@ public final class BurpSiteMap {
                 return;
             }
         }
-        put(batch);
+        List<String> out = batch.stream().filter(h -> !inScope(h)).toList();
+        if (!out.isEmpty()) {
+            batch.removeAll(out);
+            // Asked again when a later check finds them, so a scope change takes effect.
+            synchronized (this) {
+                out.forEach(seen::remove);
+            }
+        }
+        if (!batch.isEmpty()) {
+            put(batch);
+        }
+    }
+
+    private boolean inScope(String host) {
+        try {
+            return inScope.test(IssuePlanner.baseUrl(host));
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /** The row menu: tries even when automatic adds are off, and returns the event log line. */
