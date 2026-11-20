@@ -24,7 +24,7 @@ import pro.hirdman.radar.model.Risk;
 public final class ResultsExport {
 
     public static final String NOTE = "Counts only: no accounts, passwords, raw records or dumps.";
-    static final String HEADER = "host,domain,status,risk,scope,stealer,work_accounts,host_logins,db_records,latest_breach,"
+    static final String HEADER = "host,domain,status,risk,scope,stealer,work_accounts,personal_accounts,db_records,latest_breach,"
             + "checked_at,breach_sources,findings,login_page";
     private static final Gson PRETTY = new GsonBuilder().setPrettyPrinting().serializeNulls().disableHtmlEscaping().create();
 

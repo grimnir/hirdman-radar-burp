@@ -289,8 +289,8 @@ class ResultsTableTest {
                 "Breach records with credentials for a site on this host, whoever they belong to. For a public service these"
                         + " are its users.",
                 "Records in breached databases that mention the host, with an email or a URL.",
-                "Newest known breach date among the 10 largest breach sources. Sources without a date, infostealer logs and"
-                        + " database records are not dated, so newer leaks may exist. Hover a cell for the sources.",
+                "Newest known breach date among the 10 largest breach sources. Infostealer logs, database records and some"
+                        + " sources have no date, so newer leaks may exist. Hover a cell for the sources.",
                 "A login page seen in Burp traffic for this host.",
                 "Hover a cell for the time of the last check."), tips);
     }

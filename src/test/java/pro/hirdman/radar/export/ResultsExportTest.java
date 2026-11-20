@@ -97,7 +97,7 @@ class ResultsExportTest {
     @Test
     void csvHasOneLinePerHost() {
         assertEquals("""
-                host,domain,status,risk,scope,stealer,work_accounts,host_logins,db_records,latest_breach,checked_at,breach_sources,\
+                host,domain,status,risk,scope,stealer,work_accounts,personal_accounts,db_records,latest_breach,checked_at,breach_sources,\
                 findings,login_page
                 vpn.example.com,example.com,Checked (leaks found),High,in,12,3,1,40,2024-03,2026-11-17T20:00:00Z,Stealer Logs: 12 (2024-03); \
                 Collection #1: 3,Infostealer records linked to host (high); Work accounts found in breaches (high),
