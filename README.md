@@ -5,7 +5,7 @@
 <h1 align="center">Hirdman Radar for Burp Suite</h1>
 
 <p align="center">
-  <img alt="Version 0.1.0" src="https://img.shields.io/badge/version-0.1.0-0a7ea4?labelColor=0d1b2a">
+  <img alt="Version 0.2.0" src="https://img.shields.io/badge/version-0.2.0-0a7ea4?labelColor=0d1b2a">
   <img alt="Burp Suite 2026.7+" src="https://img.shields.io/badge/Burp_Suite-2026.7%2B-0a7ea4?labelColor=0d1b2a">
   <img alt="Java 21" src="https://img.shields.io/badge/Java-21-0a7ea4?labelColor=0d1b2a">
   <img alt="API key: not needed" src="https://img.shields.io/badge/API_key-not_needed-0a7ea4?labelColor=0d1b2a">

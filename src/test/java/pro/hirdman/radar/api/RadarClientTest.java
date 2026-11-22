@@ -15,6 +15,7 @@ import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import pro.hirdman.radar.Version;
 
 class RadarClientTest {
 
@@ -56,7 +57,7 @@ class RadarClientTest {
         FakeServer.Recorded r = server.requests().get(0);
         assertEquals("GET", r.method());
         assertEquals("/api/v1/meta", r.path());
-        assertEquals("HirdmanRadar/0.1.0", r.headers().get("user-agent"));
+        assertEquals("HirdmanRadar/" + Version.current(), r.headers().get("user-agent"));
         assertEquals("application/json", r.headers().get("accept"));
         assertFalse(r.headers().containsKey("x-api-key"));
     }

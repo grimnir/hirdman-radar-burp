@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "pro.hirdman"
-version = "0.1.0"
+version = "0.2.0"
 
 repositories {
     mavenCentral()
@@ -77,7 +77,7 @@ tasks.test {
     }
     // A dialog in a test fails it instead of opening a window on the developer's screen.
     systemProperty("java.awt.headless", "true")
-    // ProjectRulesTest reads the sources and READMEs, so a comment change reruns it.
+    // Rule tests read the sources and READMEs, so a comment change reruns them.
     inputs.dir("src/main").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.files(fileTree(".") { include("README*.md") }).withPathSensitivity(PathSensitivity.RELATIVE)
 }
